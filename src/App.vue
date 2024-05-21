@@ -11,7 +11,7 @@ import Scene from '@/components/Scene.vue'
 import { onMounted } from 'vue'
 
 onMounted(() => {
-  const container = new Ikun3D.Container('sceneContainer')
+  
 })
 </script>
 
