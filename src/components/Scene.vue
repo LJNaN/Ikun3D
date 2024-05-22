@@ -7,15 +7,24 @@ import { onMounted, ref } from 'vue';
 
 onMounted(() => {
   const container = new Ikun3D.Container('sceneContainer')
+  container.setSkyBox('/assets/5.jpg')
   container.importModel({
-    url: ['/assets/1.glb'],
+    // url: ['/assets/1.glb'],
+    url: [],
     onProgress: (model) => {
-      console.log(model)
       if (model.name === 'Scene') {
         model.position.set(-2, -0.75, -2)
         model.traverse(e => {
-          if(e.isMesh) {
+          if (e.isMesh) {
+            e.castShadow = true
             container.clickObjects.push(e)
+
+            if (e.name === 'GroundPlane_Plane_0') {
+              e.visible = false
+
+            } else {
+              e.receiveShadow = true
+            }
           }
         })
       }
@@ -27,6 +36,8 @@ onMounted(() => {
   container.dbClick = (e) => {
     console.log(e)
   }
+
+  
 })
 </script>
 

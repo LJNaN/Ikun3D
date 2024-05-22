@@ -1,3 +1,86 @@
+function initBloomPass(container) {
+  // ********* 辉光start *********
+  const BLOOM_LAYER = 1;
+  const bloomLayer = new Ikun3D.Layers();
+  bloomLayer.set(BLOOM_LAYER);
+
+  const bloomComposer = new Ikun3D.EffectComposer(container.renderer);
+  bloomComposer.renderToScreen = false; // 不渲染到屏幕上
+  bloomComposer.addPass(container.renderPass);
+  container.bloomComposer = bloomComposer
+
+  const darkMaterial = new Ikun3D.MeshBasicMaterial({ color: "black" });
+  const materials = {};
+
+  function darkenNonBloomed(obj) {
+    if (obj.isMesh && (!container.bloomObjects.includes(obj))) {
+      materials[obj.uuid] = obj.material;
+      obj.material = darkMaterial;
+    }
+  }
+  container.darkenNonBloomed = darkenNonBloomed
+
+
+  const bloomPass = new Ikun3D.UnrealBloomPass(
+    new Ikun3D.Vector2(container.renderer.domElement.innerWidth, container.renderer.domElement.innerHeight),
+    0.8,
+    0.8,
+    0.1,
+  );
+  bloomComposer.addPass(bloomPass);
+  container.bloomPass = bloomPass
+
+  function restoreMaterial(obj) {
+    if (materials[obj.uuid]) {
+      obj.material = materials[obj.uuid];
+      delete materials[obj.uuid];
+    }
+  }
+  container.restoreMaterial = restoreMaterial
+
+  const vs = `
+   varying vec2 vUv;
+   void main() {
+     vUv = uv;
+     gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+   }
+ `
+
+  const fs = `
+   uniform sampler2D baseTexture;
+   uniform sampler2D bloomTexture;
+   varying vec2 vUv;
+   void main() {
+     gl_FragColor = ( texture2D( baseTexture, vUv ) + vec4( 1.0 ) * texture2D( bloomTexture, vUv ) );
+   }
+ `
+
+  const shaderPass = new Ikun3D.ShaderPass(
+    new Ikun3D.ShaderMaterial({
+      uniforms: {
+        baseTexture: { value: null },
+        bloomTexture: { value: bloomComposer.renderTarget2.texture },
+      },
+      vertexShader: vs,
+      fragmentShader: fs,
+      defines: {},
+    }),
+    'baseTexture',
+  );
+  shaderPass.needsSwap = true;
+  shaderPass.name = 'bloomShaderPass'
+  container.composer.addPass(shaderPass);
+  // ********* 辉光end *********
+}
+
+function initOutlinePass(container) {
+  const composer = container.composer
+  const outlinePass = new Ikun3D.OutlinePass(new Ikun3D.Vector2(window.innerWidth, window.innerHeight), container.scene, container.camera);
+  outlinePass.selectedObjects = container.outlineObjects
+  container.outlinePass = outlinePass
+  composer.addPass(outlinePass);
+}
+
 class Container {
   domElement = null
   reder = null
@@ -8,16 +91,51 @@ class Container {
   camera = null
   control = null
   renderer = null
+  clock = new Ikun3D.Clock()
+  background = null
+
+  renderPass = null
+  composer = null
+  // ***** 辉光Pass start*****
+  _bloomEnabled = true
+  bloomPass = null
+  restoreMaterial = null
+  darkenNonBloomed = null
+  bloomComposer = null
+  get bloomEnabled() {
+    return this._bloomEnabled
+  }
+  set bloomEnabled(val) {
+    this.bloomPass.enabled = val
+    this._bloomEnabled = val
+    this.composer.passes.find(e => e?.name === 'bloomShaderPass').enabled = val
+  }
+  // ***** 辉光Pass end*****
+
+  
+  // ***** outlinePass start *****
+  _outlineEnabled = true
+  outlinePass = null
+  get outlineEnabled() {
+    return this._outlineEnabled
+  }
+  set outlineEnabled(val) {
+    this.outlinePass.enabled = val
+    this._outlineEnabled = val
+  }
+  // ***** outlinePass end *****
 
   mouseEventTimer = null
 
   constructor(dom) {
     this.checkDom(dom)
     this.initScene()
-    this.animate();
-    this.resize();
-    this.test();
+    this.initDefaultSkyBox()
+    this.resize()
+    this.test()
     this.mouseEvent()
+    this.initPass()
+    this.animate()
   }
 
   checkDom(dom) {
@@ -66,9 +184,20 @@ class Container {
   }
 
   animate() {
-    requestAnimationFrame(this.animate.bind(this))
-    this.renderer.render(this.scene, this.camera);
     this.control.update();
+
+    if (this.bloomEnabled) {
+      this.scene.traverse(this.darkenNonBloomed)
+      this.bloomComposer.render()
+      this.scene.traverse(this.restoreMaterial)
+    }
+    this.composer.render()
+
+    // if (this.outlineEnabled) {
+    //   this.outlineComposer.render()
+    // }
+
+    requestAnimationFrame(this.animate.bind(this))
   }
 
   resize() {
@@ -80,11 +209,30 @@ class Container {
     })
   }
 
+  initPass() {
+    const renderPass = new Ikun3D.RenderPass(this.scene, this.camera)
+    this.renderPass = renderPass
+
+    const composer = new Ikun3D.EffectComposer(this.renderer);
+    composer.addPass(this.renderPass);
+    this.composer = composer
+
+    initBloomPass(this)
+    initOutlinePass(this)
+
+
+    // const outputPass = new Ikun3D.OutputPass()
+    // composer.addPass(outputPass)
+  }
+
   test() {
     const geometry = new Ikun3D.BoxGeometry(1, 1, 1);
     const material = new Ikun3D.MeshLambertMaterial({ color: 0x00ff00 });
     const cube = new Ikun3D.Mesh(geometry, material);
     const cube2 = new Ikun3D.Mesh(geometry, material);
+    cube.name = 'cube'
+    console.log('cube: ', cube);
+    cube2.name = 'cube2'
     cube2.position.set(0, 0, 2)
     this.scene.add(cube);
     this.scene.add(cube2);
@@ -119,7 +267,7 @@ class Container {
       cube.rotation.x += 0.01
       cube.rotation.z += 0.01
     }
-    // render()
+    render()
   }
 
   importModel(option: Object) {
@@ -145,6 +293,45 @@ class Container {
         }
       })
     })
+  }
+
+  initDefaultSkyBox() {
+    const geometry = new Ikun3D.SphereGeometry(32, 32, 32);
+    const material = new Ikun3D.MeshBasicMaterial({ color: 0xffffff });
+    material.side = 1
+    material.needsUpdate = true
+    const sphere = new Ikun3D.Mesh(geometry, material);
+    sphere.name = 'skyBox'
+    this.scene.add(sphere);
+  }
+
+  setSkyBox(url: Array | String) {
+    const this_ = this
+    if (url instanceof Array) {
+      const loader = new Ikun3D.TextureLoader()
+      this.scene.background = loader.load(url)
+      this.background = this.scene.background.clone()
+
+    } else if (typeof (url) === 'string') {
+      const loader = new Ikun3D.TextureLoader()
+      const texture = loader.load(url, () => {
+        // const rt = new Ikun3D.WebGLCubeRenderTarget(texture.image.height)
+        // rt.fromEquirectangularTexture(this_.renderer, texture)
+        // this_.background = rt.texture
+        this_.background = texture
+
+        const bgMesh = this_.scene.children.find(e => e.name === 'skyBox')
+
+        if (bgMesh) {
+          bgMesh.material.map = texture
+          bgMesh.material.needsUpdate = true
+        }
+      })
+
+    } else {
+      console
+        .error('类型错误，只能传6个面的url数组或1张全景图url')
+    }
   }
 
   mouseEvent() {
