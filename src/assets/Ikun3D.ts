@@ -70,6 +70,14 @@ function initBloomPass(container) {
   shaderPass.needsSwap = true;
   shaderPass.name = 'bloomShaderPass'
   container.composer.addPass(shaderPass);
+
+
+  const gui = new dat.GUI();
+  gui.add(container.bloomPass, 'enabled').name('辉光开启');
+  gui.add(container.bloomPass, 'strength', 0, 2).name('强度');
+  gui.add(container.bloomPass, 'radius', 0, 2).name('半径');
+  gui.add(container.bloomPass, 'threshold', 0, 2).name('阈值');
+  container.bloomGUI = gui
   // ********* 辉光end *********
 }
 
@@ -79,11 +87,66 @@ function initOutlinePass(container) {
   outlinePass.selectedObjects = container.outlineObjects
   container.outlinePass = outlinePass
   composer.addPass(outlinePass);
+
+  const gui = new dat.GUI();
+  gui.add(container.outlinePass, 'enabled').name('轮廓线开启');
+  const edgeColor = {
+    visible: '#' + container.outlinePass.visibleEdgeColor.getHexString(),
+    hidden: '#' + container.outlinePass.hiddenEdgeColor.getHexString()
+  }
+  gui.addColor(edgeColor, 'visible').name('可见部分颜色').onChange(val => {
+    container.outlinePass.visibleEdgeColor.set(val)
+  })
+  gui.addColor(edgeColor, 'hidden').name('遮挡部分颜色').onChange(val => {
+    container.outlinePass.hiddenEdgeColor.set(val)
+  })
+  gui.add(container.outlinePass, 'edgeStrength', 0, 10).name('亮度');
+  gui.add(container.outlinePass, 'edgeGlow', 0, 1).name('光晕');
+  gui.add(container.outlinePass, 'edgeThickness', 0.1, 5).name('边缘透明度');
+  gui.add(container.outlinePass, 'pulsePeriod', 0, 5).name('呼吸灯');
+  container.outlineGUI = gui
+}
+
+function initRGBPass(container) {
+  const shaderPass = new Ikun3D.ShaderPass(
+    new Ikun3D.ShaderMaterial({
+      uniforms: {
+        tDiffuse: { value: container.composer },
+        color: { value: new Ikun3D.Color(0xffffff) },
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1);
+        }
+      `,
+      fragmentShader: `
+        varying vec2 vUv;
+        uniform sampler2D tDiffuse;
+        uniform vec3 color;
+        void main() {
+          vec4 previousPassColor = texture2D(tDiffuse, vUv);
+          gl_FragColor = vec4(
+              previousPassColor.rgb * color,
+              previousPassColor.a);
+        }
+      `,
+    })
+  );
+  shaderPass.name = 'RGBPass'
+  container.composer.addPass(shaderPass);
+  container.RGBPass = shaderPass
+
+  const gui = new dat.GUI();
+  gui.add(container.RGBPass, 'enabled').name('RGB调整开启');
+  gui.add(container.RGBPass.material.uniforms.color.value, 'r', 0, 2).name('红');
+  gui.add(container.RGBPass.material.uniforms.color.value, 'g', 0, 2).name('绿');
+  gui.add(container.RGBPass.material.uniforms.color.value, 'b', 0, 2).name('蓝');
 }
 
 class Container {
   domElement = null
-  reder = null
   clickObjects = []
   outlineObjects = []
   bloomObjects = []
@@ -102,6 +165,7 @@ class Container {
   restoreMaterial = null
   darkenNonBloomed = null
   bloomComposer = null
+  bloomGUI = null
   get bloomEnabled() {
     return this._bloomEnabled
   }
@@ -112,10 +176,11 @@ class Container {
   }
   // ***** 辉光Pass end*****
 
-  
+
   // ***** outlinePass start *****
   _outlineEnabled = true
   outlinePass = null
+  outlineGUI = null
   get outlineEnabled() {
     return this._outlineEnabled
   }
@@ -125,6 +190,20 @@ class Container {
   }
   // ***** outlinePass end *****
 
+
+  // ***** RGBPass start *****
+  _RGBEnabled = true
+  RGBPass = null
+  get RGBEnabled() {
+    return this._RGBEnabled
+  }
+  set RGBEnabled(val) {
+    this.RGBPass.enabled = val
+    this._RGBEnabled = val
+  }
+  // ***** RGBPass end *****
+
+
   mouseEventTimer = null
 
   constructor(dom) {
@@ -132,9 +211,9 @@ class Container {
     this.initScene()
     this.initDefaultSkyBox()
     this.resize()
-    this.test()
     this.mouseEvent()
     this.initPass()
+    this.test()
     this.animate()
   }
 
@@ -193,9 +272,6 @@ class Container {
     }
     this.composer.render()
 
-    // if (this.outlineEnabled) {
-    //   this.outlineComposer.render()
-    // }
 
     requestAnimationFrame(this.animate.bind(this))
   }
@@ -219,10 +295,7 @@ class Container {
 
     initBloomPass(this)
     initOutlinePass(this)
-
-
-    // const outputPass = new Ikun3D.OutputPass()
-    // composer.addPass(outputPass)
+    initRGBPass(this)
   }
 
   test() {
@@ -231,7 +304,9 @@ class Container {
     const cube = new Ikun3D.Mesh(geometry, material);
     const cube2 = new Ikun3D.Mesh(geometry, material);
     cube.name = 'cube'
-    console.log('cube: ', cube);
+    this.bloomObjects.push(cube)
+    this.outlineObjects.push(cube)
+
     cube2.name = 'cube2'
     cube2.position.set(0, 0, 2)
     this.scene.add(cube);
@@ -243,6 +318,7 @@ class Container {
     const light = new Ikun3D.DirectionalLight({ color: '#FFFFFF' })
     light.position.set(7, 5, 3)
     const light2 = new Ikun3D.AmbientLight({ color: '#FFFFFF' })
+    light2.intensity = 1.5
     container.scene.add(light)
     container.scene.add(light2)
     cube.castShadow = true
@@ -253,7 +329,7 @@ class Container {
     this.control.target.set(0.21223607274690665, 0.023398561398567788, 1.163792085183366)
 
     const planeG = new Ikun3D.PlaneGeometry(10, 10)
-    const planeM = new Ikun3D.MeshLambertMaterial({ color: 0xaaaaaa });
+    const planeM = new Ikun3D.MeshLambertMaterial({ color: 0xffffff });
     const plane = new Ikun3D.Mesh(planeG, planeM)
     plane.rotation.x = -Math.PI / 2
     plane.position.y = -0.5

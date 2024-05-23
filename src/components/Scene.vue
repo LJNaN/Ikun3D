@@ -9,8 +9,8 @@ onMounted(() => {
   const container = new Ikun3D.Container('sceneContainer')
   container.setSkyBox('/assets/5.jpg')
   container.importModel({
-    // url: ['/assets/1.glb'],
-    url: [],
+    url: ['/assets/1.glb'],
+    // url: [],
     onProgress: (model) => {
       if (model.name === 'Scene') {
         model.position.set(-2, -0.75, -2)
