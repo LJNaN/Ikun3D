@@ -145,6 +145,12 @@ function initRGBPass(container) {
   gui.add(container.RGBPass.material.uniforms.color.value, 'b', 0, 2).name('蓝');
 }
 
+function initFXAA(container) {
+  const fxaaPass = new Ikun3D.ShaderPass(Ikun3D.FXAAShader)
+  fxaaPass.material.uniforms['resolution'].value.set(1 / window.innerWidth, 1 / window.innerHeight)
+  container.composer.addPass(fxaaPass)
+}
+
 class Container {
   domElement = null
   clickObjects = []
@@ -153,12 +159,15 @@ class Container {
   scene = null
   camera = null
   control = null
+  transformControl = null
   renderer = null
   clock = new Ikun3D.Clock()
   background = null
 
   renderPass = null
   composer = null
+
+
   // ***** 辉光Pass start*****
   _bloomEnabled = true
   bloomPass = null
@@ -206,15 +215,23 @@ class Container {
 
   mouseEventTimer = null
 
+  directionalLight = null
+  directionalLightHelper = null
+  ambientLight = null
+
   constructor(dom) {
     this.checkDom(dom)
     this.initScene()
+    this.initLight()
     this.initDefaultSkyBox()
     this.resize()
     this.mouseEvent()
     this.initPass()
     this.test()
     this.animate()
+
+    // 后续加载
+    this.initTransformControl()
   }
 
   checkDom(dom) {
@@ -248,7 +265,7 @@ class Container {
   initScene() {
     const scene = new Ikun3D.Scene();
     const camera = new Ikun3D.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100000);
-    const renderer = new Ikun3D.WebGLRenderer();
+    const renderer = new Ikun3D.WebGLRenderer({ logarithmicDepthBuffer: true });
     const control = new Ikun3D.OrbitControls(camera, renderer.domElement);
     this.scene = scene
     this.camera = camera
@@ -262,6 +279,29 @@ class Container {
     renderer.shadowMap.enabled = true
   }
 
+  initLight() {
+    const directionalLight = new Ikun3D.DirectionalLight({ color: '#FFFFFF' })
+    this.directionalLight = directionalLight
+    directionalLight.position.set(7, 5, 3)
+    directionalLight.castShadow = true
+
+    const ambientLight = new Ikun3D.AmbientLight({ color: '#FFFFFF' })
+    this.ambientLight = ambientLight
+    ambientLight.intensity = 1.5
+
+    this.scene.add(directionalLight)
+    this.scene.add(ambientLight)
+
+    const helper = new Ikun3D.DirectionalLightHelper(directionalLight, 5)
+    this.directionalLightHelper = helper
+    this.scene.add(helper)
+
+
+    setTimeout(() => {
+      this.transformControl.attach(directionalLight)
+    }, 0)
+  }
+
   animate() {
     this.control.update();
 
@@ -271,6 +311,7 @@ class Container {
       this.scene.traverse(this.restoreMaterial)
     }
     this.composer.render()
+
 
 
     requestAnimationFrame(this.animate.bind(this))
@@ -296,14 +337,16 @@ class Container {
     initBloomPass(this)
     initOutlinePass(this)
     initRGBPass(this)
+    initFXAA(this)
   }
 
   test() {
-    const geometry = new Ikun3D.BoxGeometry(1, 1, 1);
+    const geometry = new Ikun3D.BoxGeometry(1000, 1000, 1000);
     const material = new Ikun3D.MeshLambertMaterial({ color: 0x00ff00 });
     const cube = new Ikun3D.Mesh(geometry, material);
     const cube2 = new Ikun3D.Mesh(geometry, material);
     cube.name = 'cube'
+    window.cube = cube
     this.bloomObjects.push(cube)
     this.outlineObjects.push(cube)
 
@@ -315,20 +358,12 @@ class Container {
     this.clickObjects.push(cube2)
     this.camera.position.z = 5;
 
-    const light = new Ikun3D.DirectionalLight({ color: '#FFFFFF' })
-    light.position.set(7, 5, 3)
-    const light2 = new Ikun3D.AmbientLight({ color: '#FFFFFF' })
-    light2.intensity = 1.5
-    container.scene.add(light)
-    container.scene.add(light2)
     cube.castShadow = true
     cube2.castShadow = true
-    light.castShadow = true
+    this.camera.position.set(2427.62362025659, 6219.270630105399, 3848.267891750872)
+    this.control.target.set(0, 0, 0)
 
-    this.camera.position.set(4.265633980989674, 2.225126559731919, 3.093133739429277)
-    this.control.target.set(0.21223607274690665, 0.023398561398567788, 1.163792085183366)
-
-    const planeG = new Ikun3D.PlaneGeometry(10, 10)
+    const planeG = new Ikun3D.PlaneGeometry(10000, 10000)
     const planeM = new Ikun3D.MeshLambertMaterial({ color: 0xffffff });
     const plane = new Ikun3D.Mesh(planeG, planeM)
     plane.rotation.x = -Math.PI / 2
@@ -337,13 +372,14 @@ class Container {
     plane.receiveShadow = true
 
 
-
     function render() {
       requestAnimationFrame(render)
       cube.rotation.x += 0.01
       cube.rotation.z += 0.01
     }
     render()
+
+
   }
 
   importModel(option: Object) {
@@ -372,7 +408,7 @@ class Container {
   }
 
   initDefaultSkyBox() {
-    const geometry = new Ikun3D.SphereGeometry(32, 32, 32);
+    const geometry = new Ikun3D.SphereGeometry(32000, 32, 32);
     const material = new Ikun3D.MeshBasicMaterial({ color: 0xffffff });
     material.side = 1
     material.needsUpdate = true
@@ -391,11 +427,7 @@ class Container {
     } else if (typeof (url) === 'string') {
       const loader = new Ikun3D.TextureLoader()
       const texture = loader.load(url, () => {
-        // const rt = new Ikun3D.WebGLCubeRenderTarget(texture.image.height)
-        // rt.fromEquirectangularTexture(this_.renderer, texture)
-        // this_.background = rt.texture
         this_.background = texture
-
         const bgMesh = this_.scene.children.find(e => e.name === 'skyBox')
 
         if (bgMesh) {
@@ -461,7 +493,22 @@ class Container {
   hover() { }
   dbClick() { }
 
+  initTransformControl() {
+    const this_ = this
+    const transformControl = new Ikun3D.TransformControls(this.camera, this.renderer.domElement)
+    this.transformControl = transformControl
+    this.scene.add(transformControl)
+    transformControl.addEventListener('dragging-changed', function (event) {
+      this_.control.enabled = !event.value
 
+    });
+
+    transformControl.addEventListener('change', function (event) {
+      if (this_?.directionalLightHelper?.visible) {
+        this_.directionalLightHelper.update()
+      }
+    })
+  }
 }
 
 
