@@ -1,3 +1,4 @@
+// @ts-nocheck
 function initBloomPass(container) {
   // ********* 辉光start *********
   const BLOOM_LAYER = 1;
@@ -346,12 +347,13 @@ class Container {
     const cube = new Ikun3D.Mesh(geometry, material);
     const cube2 = new Ikun3D.Mesh(geometry, material);
     cube.name = 'cube'
+    cube.position.set(1463, 1170, 1713)
     window.cube = cube
     this.bloomObjects.push(cube)
     this.outlineObjects.push(cube)
 
     cube2.name = 'cube2'
-    cube2.position.set(0, 0, 2)
+    cube2.position.set(0, 500, 0)
     this.scene.add(cube);
     this.scene.add(cube2);
     this.clickObjects.push(cube)

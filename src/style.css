@@ -3,3 +3,8 @@
   margin: 0;
   box-sizing: border-box;
 }
+
+.dg.ac {
+  transform-origin: top right;
+  scale: 80%;
+}
