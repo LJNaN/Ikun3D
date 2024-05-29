@@ -4,6 +4,7 @@
 
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
+import {UTIL} from '@/JS3D/UTIL'
 
 onMounted(() => {
   const container = new Ikun3D.Container('sceneContainer')
@@ -13,7 +14,8 @@ onMounted(() => {
     // url: [],
     onProgress: (model) => {
       if (model.name === 'Scene') {
-        model.position.set(-2, -0.75, -2)
+        model.position.set(-2051, -200, -3017)
+        model.scale.set(1000, 1000, 1000)
         model.traverse(e => {
           if (e.isMesh) {
             e.castShadow = true
@@ -37,7 +39,7 @@ onMounted(() => {
     console.log(e)
   }
 
-  
+
 })
 </script>
 

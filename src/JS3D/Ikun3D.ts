@@ -1,4 +1,12 @@
 // @ts-nocheck
+import * as TWEEN from '@tweenjs/tween.js'
+import { CACHE } from './CACHE'
+import { API } from './API'
+import { DATA } from './DATA'
+import { STATE } from './STATE'
+import { UTIL } from './UTIL'
+console.log('UTIL: ', UTIL);
+
 function initBloomPass(container) {
   // ********* 辉光start *********
   const BLOOM_LAYER = 1;
@@ -71,10 +79,11 @@ function initBloomPass(container) {
   shaderPass.needsSwap = true;
   shaderPass.name = 'bloomShaderPass'
   container.composer.addPass(shaderPass);
+  shaderPass.enabled = container.bloomEnabled
 
 
   const gui = new dat.GUI();
-  gui.add(container.bloomPass, 'enabled').name('辉光开启');
+  gui.add(container, 'bloomEnabled').name('辉光开启');
   gui.add(container.bloomPass, 'strength', 0, 2).name('强度');
   gui.add(container.bloomPass, 'radius', 0, 2).name('半径');
   gui.add(container.bloomPass, 'threshold', 0, 2).name('阈值');
@@ -88,9 +97,10 @@ function initOutlinePass(container) {
   outlinePass.selectedObjects = container.outlineObjects
   container.outlinePass = outlinePass
   composer.addPass(outlinePass);
+  outlinePass.enabled = container.outlineEnabled
 
   const gui = new dat.GUI();
-  gui.add(container.outlinePass, 'enabled').name('轮廓线开启');
+  gui.add(container, 'outlineEnabled').name('轮廓线开启');
   const edgeColor = {
     visible: '#' + container.outlinePass.visibleEdgeColor.getHexString(),
     hidden: '#' + container.outlinePass.hiddenEdgeColor.getHexString()
@@ -138,9 +148,10 @@ function initRGBPass(container) {
   shaderPass.name = 'RGBPass'
   container.composer.addPass(shaderPass);
   container.RGBPass = shaderPass
+  shaderPass.enabled = container.RGBEnabled
 
   const gui = new dat.GUI();
-  gui.add(container.RGBPass, 'enabled').name('RGB调整开启');
+  gui.add(container, 'RGBEnabled').name('RGB调整开启');
   gui.add(container.RGBPass.material.uniforms.color.value, 'r', 0, 2).name('红');
   gui.add(container.RGBPass.material.uniforms.color.value, 'g', 0, 2).name('绿');
   gui.add(container.RGBPass.material.uniforms.color.value, 'b', 0, 2).name('蓝');
@@ -170,7 +181,7 @@ class Container {
 
 
   // ***** 辉光Pass start*****
-  _bloomEnabled = true
+  _bloomEnabled = !true
   bloomPass = null
   restoreMaterial = null
   darkenNonBloomed = null
@@ -188,7 +199,7 @@ class Container {
 
 
   // ***** outlinePass start *****
-  _outlineEnabled = true
+  _outlineEnabled = !true
   outlinePass = null
   outlineGUI = null
   get outlineEnabled() {
@@ -261,6 +272,7 @@ class Container {
       Ikun3D.container = [this]
     }
     window.container = this
+    CACHE.container = this
   }
 
   initScene() {
@@ -305,6 +317,7 @@ class Container {
 
   animate() {
     this.control.update();
+    TWEEN.update()
 
     if (this.bloomEnabled) {
       this.scene.traverse(this.darkenNonBloomed)
@@ -312,8 +325,6 @@ class Container {
       this.scene.traverse(this.restoreMaterial)
     }
     this.composer.render()
-
-
 
     requestAnimationFrame(this.animate.bind(this))
   }
@@ -510,9 +521,14 @@ class Container {
         this_.directionalLightHelper.update()
       }
     })
+
+    document.addEventListener('keydown', e => {
+      if (e.key === 'f') {
+        // if()
+      }
+    })
   }
 }
 
-
-
+Ikun3D.TWEEN = TWEEN
 Ikun3D.Container = Container
