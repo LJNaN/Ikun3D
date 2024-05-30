@@ -5,7 +5,7 @@ import { API } from './API'
 import { DATA } from './DATA'
 import { STATE } from './STATE'
 import { UTIL } from './UTIL'
-console.log('UTIL: ', UTIL);
+
 
 function initBloomPass(container) {
   // ********* 辉光start *********
@@ -230,6 +230,8 @@ class Container {
   directionalLight = null
   directionalLightHelper = null
   ambientLight = null
+  lightGUI = null
+  lightGUIShow = true
 
   constructor(dom) {
     this.checkDom(dom)
@@ -293,6 +295,7 @@ class Container {
   }
 
   initLight() {
+    const this_ = this
     const directionalLight = new Ikun3D.DirectionalLight({ color: '#FFFFFF' })
     this.directionalLight = directionalLight
     directionalLight.position.set(7, 5, 3)
@@ -305,14 +308,52 @@ class Container {
     this.scene.add(directionalLight)
     this.scene.add(ambientLight)
 
-    const helper = new Ikun3D.DirectionalLightHelper(directionalLight, 5)
-    this.directionalLightHelper = helper
-    this.scene.add(helper)
+    const cameraHelper = new Ikun3D.CameraHelper(directionalLight.shadow.camera)
+    cameraHelper.name = 'directionalLightShadowHelper'
+    this.directionalLightHelper = cameraHelper
+    this.scene.add(cameraHelper)
+
+    // GUI
+    function updateShadow(type, val) {
+      if (type === 'width') {
+        this_.directionalLight.shadow.camera.right = val
+        this_.directionalLight.shadow.camera.left = -val
+
+      } else if (type === 'height') {
+        this_.directionalLight.shadow.camera.top = val
+        this_.directionalLight.shadow.camera.bottom = -val
+      }
+
+      const light = directionalLight
+      light.target.updateMatrixWorld();
+      cameraHelper.update();
+      light.shadow.camera.updateProjectionMatrix();
+      cameraHelper.update();
+    }
+
+    const obj = {
+      width: container.directionalLight.shadow.camera.right,
+      height: container.directionalLight.shadow.camera.top
+    }
+
+    const gui = new dat.GUI();
+    gui.add(container.directionalLight.position, 'x').step(1).name('X').onChange(val => updateShadow('positionX', val))
+    gui.add(container.directionalLight.position, 'y').step(1).name('Y').onChange(val => updateShadow('positionY', val))
+    gui.add(container.directionalLight.position, 'z').step(1).name('Z').onChange(val => updateShadow('positionZ', val))
+    gui.add(container.directionalLight.target.position, 'x').step(1).name('X').onChange(val => updateShadow('targetX', val))
+    gui.add(container.directionalLight.target.position, 'y').step(1).name('Y').onChange(val => updateShadow('targetY', val))
+    gui.add(container.directionalLight.target.position, 'z').step(1).name('Z').onChange(val => updateShadow('targetZ', val))
+    gui.add(container.directionalLight.shadow.camera, 'far').step(1).name('far').onChange(val => updateShadow('far', val))
+    gui.add(container.directionalLight.shadow.camera, 'near').step(1).name('near').onChange(val => updateShadow('near', val))
+    gui.add(obj, 'width').step(1).name('width').onChange(val => updateShadow('width', val))
+    gui.add(obj, 'height').step(1).name('height').onChange(val => updateShadow('height', val))
+    this.lightGUI = gui
 
 
     setTimeout(() => {
       this.transformControl.attach(directionalLight)
     }, 0)
+
   }
 
   animate() {
@@ -391,6 +432,7 @@ class Container {
       cube.rotation.z += 0.01
     }
     render()
+
 
 
   }
@@ -516,15 +558,24 @@ class Container {
 
     });
 
-    transformControl.addEventListener('change', function (event) {
-      if (this_?.directionalLightHelper?.visible) {
-        this_.directionalLightHelper.update()
-      }
-    })
-
     document.addEventListener('keydown', e => {
-      if (e.key === 'f') {
-        // if()
+      if (e.key === 'f' && this_.transformControl.visible) {
+        const object = this_.transformControl.object
+
+        let rollY = 0
+        if (object.geometry) {
+          object.geometry.computeBoundingBox()
+          const boundingBox = object.geometry.boundingBox
+          rollY = boundingBox.max.y - boundingBox.min.y
+        }
+        const newCameraPosition = UTIL.getCameraToTargetPosition(object.position.clone(), rollY + 1000)
+        UTIL.cameraAnimation({
+          cameraState: {
+            position: newCameraPosition,
+            target: object.position.clone()
+          },
+          duration: 300
+        })
       }
     })
   }
