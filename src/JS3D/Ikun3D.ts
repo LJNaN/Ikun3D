@@ -163,6 +163,7 @@ function initFXAA(container) {
   container.composer.addPass(fxaaPass)
 }
 
+
 class Container {
   domElement = null
   clickObjects = []
@@ -225,13 +226,29 @@ class Container {
   // ***** RGBPass end *****
 
 
-  mouseEventTimer = null
-
   directionalLight = null
   directionalLightHelper = null
   ambientLight = null
   lightGUI = null
-  lightGUIShow = true
+  _lightGUIShow = true
+  get lightGUIShow() {
+    return this._lightGUIShow
+  }
+  set lightGUIShow(val) {
+    this._lightGUIShow = val
+    this.directionalLightHelper.visible = val
+    if (val) {
+      this.lightGUI.show()
+      this.transformControl.attach(this.directionalLight)
+
+    } else {
+      this.lightGUI.hide()
+      this.transformControl.detach()
+    }
+  }
+
+
+  mouseEventTimer = null
 
   constructor(dom) {
     this.checkDom(dom)
@@ -313,6 +330,9 @@ class Container {
     this.directionalLightHelper = cameraHelper
     this.scene.add(cameraHelper)
 
+    directionalLight.target.visible = false
+    this.scene.add(directionalLight.target)
+
     // GUI
     function updateShadow(type, val) {
       if (type === 'width') {
@@ -322,38 +342,54 @@ class Container {
       } else if (type === 'height') {
         this_.directionalLight.shadow.camera.top = val
         this_.directionalLight.shadow.camera.bottom = -val
+
+      } else if (type === 'mapSize') {
+        this_.directionalLight.shadow.mapSize.set(val, val)
       }
 
       const light = directionalLight
       light.target.updateMatrixWorld();
-      cameraHelper.update();
       light.shadow.camera.updateProjectionMatrix();
       cameraHelper.update();
     }
 
     const obj = {
       width: container.directionalLight.shadow.camera.right,
-      height: container.directionalLight.shadow.camera.top
+      height: container.directionalLight.shadow.camera.top,
+      setPositionFunc: () => {
+        this.transformControl.attach(directionalLight)
+      },
+      setTargetFunc: () => {
+        this.transformControl.attach(directionalLight.target)
+      },
+      mapSize: container.directionalLight.shadow.mapSize.x
     }
 
     const gui = new dat.GUI();
-    gui.add(container.directionalLight.position, 'x').step(1).name('X').onChange(val => updateShadow('positionX', val))
-    gui.add(container.directionalLight.position, 'y').step(1).name('Y').onChange(val => updateShadow('positionY', val))
-    gui.add(container.directionalLight.position, 'z').step(1).name('Z').onChange(val => updateShadow('positionZ', val))
-    gui.add(container.directionalLight.target.position, 'x').step(1).name('X').onChange(val => updateShadow('targetX', val))
-    gui.add(container.directionalLight.target.position, 'y').step(1).name('Y').onChange(val => updateShadow('targetY', val))
-    gui.add(container.directionalLight.target.position, 'z').step(1).name('Z').onChange(val => updateShadow('targetZ', val))
-    gui.add(container.directionalLight.shadow.camera, 'far').step(1).name('far').onChange(val => updateShadow('far', val))
-    gui.add(container.directionalLight.shadow.camera, 'near').step(1).name('near').onChange(val => updateShadow('near', val))
-    gui.add(obj, 'width').step(1).name('width').onChange(val => updateShadow('width', val))
-    gui.add(obj, 'height').step(1).name('height').onChange(val => updateShadow('height', val))
+    const folder1 = gui.addFolder('相机位置及目标')
+    folder1.open()
+    folder1.add(container.directionalLight.position, 'x').step(1).name('位置 X')
+    folder1.add(container.directionalLight.position, 'y').step(1).name('位置 Y')
+    folder1.add(container.directionalLight.position, 'z').step(1).name('位置 Z')
+    folder1.add(container.directionalLight.target.position, 'x').step(1).name('目标 X')
+    folder1.add(container.directionalLight.target.position, 'y').step(1).name('目标 Y')
+    folder1.add(container.directionalLight.target.position, 'z').step(1).name('目标 Z')
+
+
+    const folder2 = gui.addFolder('阴影范围')
+    folder2.open()
+    folder2.add(container.directionalLight.shadow.camera, 'far').step(1).name('阴影范围 最远')
+    folder2.add(container.directionalLight.shadow.camera, 'near').step(1).name('阴影范围 最近')
+    folder2.add(obj, 'width').step(1).name('阴影范围 宽').onChange(val => updateShadow('width', val))
+    folder2.add(obj, 'height').step(1).name('阴影范围 高').onChange(val => updateShadow('height', val))
+    folder2.add(container.directionalLight.shadow, 'radius').name('阴影半径')
+    folder2.add(container.directionalLight.shadow, 'bias').step(0.0001).name('阴影偏移')
+    folder2.add(obj, 'mapSize', [512, 1024, 2048, 4096, 8192]).name('阴影分辨率').onChange(val => updateShadow('mapSize', val))
+
+
+    gui.add(obj, 'setPositionFunc').name('平行光位置').onChange(val => updateShadow('setPositionFunc', val))
+    gui.add(obj, 'setTargetFunc').name('目标位置').onChange(val => updateShadow('setTargetFunc', val))
     this.lightGUI = gui
-
-
-    setTimeout(() => {
-      this.transformControl.attach(directionalLight)
-    }, 0)
-
   }
 
   animate() {
@@ -426,15 +462,27 @@ class Container {
     plane.receiveShadow = true
 
 
+    // 相机位置
+    this.directionalLight.position.set(3087, 7340, 2821)
+    this.directionalLight.target.position.set(0, 0, 0)
+    const shadowCamera = this.directionalLight.shadow.camera
+    shadowCamera.far = 15000
+    shadowCamera.near = 1
+    shadowCamera.right = 6970
+    shadowCamera.left = -6970
+    shadowCamera.top = 6724
+    shadowCamera.bottom = -6724
+    shadowCamera.updateProjectionMatrix()
+    this.directionalLight.target.updateMatrixWorld()
+    this.directionalLightHelper.update()
+
+
     function render() {
       requestAnimationFrame(render)
       cube.rotation.x += 0.01
       cube.rotation.z += 0.01
     }
     render()
-
-
-
   }
 
   importModel(option: Object) {
