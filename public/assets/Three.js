@@ -86728,6 +86728,1627 @@ updateMatrixWorld( force ) {
 }
 
 
+class LineSegments2 extends Mesh {
+
+	/**
+	 * Constructs a new wide line.
+	 *
+	 * @param {LineSegmentsGeometry} [geometry] - The line geometry.
+	 * @param {LineMaterial} [material] - The line material.
+	 */
+	constructor( geometry = new LineSegmentsGeometry(), material = new LineMaterial( { color: Math.random() * 0xffffff } ) ) {
+
+		super( geometry, material );
+
+		/**
+		 * This flag can be used for type testing.
+		 *
+		 * @type {boolean}
+		 * @readonly
+		 * @default true
+		 */
+		this.isLineSegments2 = true;
+
+		this.type = 'LineSegments2';
+
+	}
+
+	/**
+	 * Computes an array of distance values which are necessary for rendering dashed lines.
+	 * For each vertex in the geometry, the method calculates the cumulative length from the
+	 * current point to the very beginning of the line.
+	 *
+	 * @return {LineSegments2} A reference to this instance.
+	 */
+	computeLineDistances() {
+
+		// for backwards-compatibility, but could be a method of LineSegmentsGeometry...
+
+		const geometry = this.geometry;
+
+		const instanceStart = geometry.attributes.instanceStart;
+		const instanceEnd = geometry.attributes.instanceEnd;
+		const lineDistances = new Float32Array( 2 * instanceStart.count );
+
+		for ( let i = 0, j = 0, l = instanceStart.count; i < l; i ++, j += 2 ) {
+
+			_start.fromBufferAttribute( instanceStart, i );
+			_end.fromBufferAttribute( instanceEnd, i );
+
+			lineDistances[ j ] = ( j === 0 ) ? 0 : lineDistances[ j - 1 ];
+			lineDistances[ j + 1 ] = lineDistances[ j ] + _start.distanceTo( _end );
+
+		}
+
+		const instanceDistanceBuffer = new InstancedInterleavedBuffer( lineDistances, 2, 1 ); // d0, d1
+
+		geometry.setAttribute( 'instanceDistanceStart', new InterleavedBufferAttribute( instanceDistanceBuffer, 1, 0 ) ); // d0
+		geometry.setAttribute( 'instanceDistanceEnd', new InterleavedBufferAttribute( instanceDistanceBuffer, 1, 1 ) ); // d1
+
+		return this;
+
+	}
+
+	/**
+	 * Computes intersection points between a casted ray and this instance.
+	 *
+	 * @param {Raycaster} raycaster - The raycaster.
+	 * @param {Array<Object>} intersects - The target array that holds the intersection points.
+	 */
+	raycast( raycaster, intersects ) {
+
+		const worldUnits = this.material.worldUnits;
+		const camera = raycaster.camera;
+
+		if ( camera === null && ! worldUnits ) {
+
+			console.error( 'LineSegments2: "Raycaster.camera" needs to be set in order to raycast against LineSegments2 while worldUnits is set to false.' );
+
+		}
+
+		const threshold = ( raycaster.params.Line2 !== undefined ) ? raycaster.params.Line2.threshold || 0 : 0;
+
+		_ray = raycaster.ray;
+
+		const matrixWorld = this.matrixWorld;
+		const geometry = this.geometry;
+		const material = this.material;
+
+		_lineWidth = material.linewidth + threshold;
+
+		// check if we intersect the sphere bounds
+		if ( geometry.boundingSphere === null ) {
+
+			geometry.computeBoundingSphere();
+
+		}
+
+		_sphere.copy( geometry.boundingSphere ).applyMatrix4( matrixWorld );
+
+		// increase the sphere bounds by the worst case line screen space width
+		let sphereMargin;
+		if ( worldUnits ) {
+
+			sphereMargin = _lineWidth * 0.5;
+
+		} else {
+
+			const distanceToSphere = Math.max( camera.near, _sphere.distanceToPoint( _ray.origin ) );
+			sphereMargin = getWorldSpaceHalfWidth( camera, distanceToSphere, material.resolution );
+
+		}
+
+		_sphere.radius += sphereMargin;
+
+		if ( _ray.intersectsSphere( _sphere ) === false ) {
+
+			return;
+
+		}
+
+		// check if we intersect the box bounds
+		if ( geometry.boundingBox === null ) {
+
+			geometry.computeBoundingBox();
+
+		}
+
+		_box.copy( geometry.boundingBox ).applyMatrix4( matrixWorld );
+
+		// increase the box bounds by the worst case line width
+		let boxMargin;
+		if ( worldUnits ) {
+
+			boxMargin = _lineWidth * 0.5;
+
+		} else {
+
+			const distanceToBox = Math.max( camera.near, _box.distanceToPoint( _ray.origin ) );
+			boxMargin = getWorldSpaceHalfWidth( camera, distanceToBox, material.resolution );
+
+		}
+
+		_box.expandByScalar( boxMargin );
+
+		if ( _ray.intersectsBox( _box ) === false ) {
+
+			return;
+
+		}
+
+		if ( worldUnits ) {
+
+			raycastWorldUnits( this, intersects );
+
+		} else {
+
+			raycastScreenSpace( this, camera, intersects );
+
+		}
+
+	}
+
+	onBeforeRender( renderer ) {
+
+		const uniforms = this.material.uniforms;
+
+		if ( uniforms && uniforms.resolution ) {
+
+			const _viewport = new Vector4()
+			renderer.getViewport( _viewport );
+			this.material.uniforms.resolution.value.set( _viewport.z, _viewport.w );
+
+		}
+
+	}
+
+}
+
+
+const line2_box = new Box3();
+const line2_vector = new Vector3();
+
+/**
+ * A series of vertex pairs, forming line segments.
+ *
+ * This is used in {@link LineSegments2} to describe the shape.
+ *
+ * @augments InstancedBufferGeometry
+ */
+class LineSegmentsGeometry extends InstancedBufferGeometry {
+
+	/**
+	 * Constructs a new line segments geometry.
+	 */
+	constructor() {
+
+		super();
+
+		/**
+		 * This flag can be used for type testing.
+		 *
+		 * @type {boolean}
+		 * @readonly
+		 * @default true
+		 */
+		this.isLineSegmentsGeometry = true;
+
+		this.type = 'LineSegmentsGeometry';
+
+		const positions = [ - 1, 2, 0, 1, 2, 0, - 1, 1, 0, 1, 1, 0, - 1, 0, 0, 1, 0, 0, - 1, - 1, 0, 1, - 1, 0 ];
+		const uvs = [ - 1, 2, 1, 2, - 1, 1, 1, 1, - 1, - 1, 1, - 1, - 1, - 2, 1, - 2 ];
+		const index = [ 0, 2, 1, 2, 3, 1, 2, 4, 3, 4, 5, 3, 4, 6, 5, 6, 7, 5 ];
+
+		this.setIndex( index );
+		this.setAttribute( 'position', new Float32BufferAttribute( positions, 3 ) );
+		this.setAttribute( 'uv', new Float32BufferAttribute( uvs, 2 ) );
+
+	}
+
+	/**
+	 * Applies the given 4x4 transformation matrix to the geometry.
+	 *
+	 * @param {Matrix4} matrix - The matrix to apply.
+	 * @return {LineSegmentsGeometry} A reference to this instance.
+	 */
+	applyMatrix4( matrix ) {
+
+		const start = this.attributes.instanceStart;
+		const end = this.attributes.instanceEnd;
+
+		if ( start !== undefined ) {
+
+			start.applyMatrix4( matrix );
+
+			end.applyMatrix4( matrix );
+
+			start.needsUpdate = true;
+
+		}
+
+		if ( this.boundingBox !== null ) {
+
+			this.computeBoundingBox();
+
+		}
+
+		if ( this.boundingSphere !== null ) {
+
+			this.computeBoundingSphere();
+
+		}
+
+		return this;
+
+	}
+
+	/**
+	 * Sets the given line positions for this geometry. The length must be a multiple of six since
+	 * each line segment is defined by a start end vertex in the pattern `(xyz xyz)`.
+	 *
+	 * @param {Float32Array|Array<number>} array - The position data to set.
+	 * @return {LineSegmentsGeometry} A reference to this geometry.
+	 */
+	setPositions( array ) {
+
+		let lineSegments;
+
+		if ( array instanceof Float32Array ) {
+
+			lineSegments = array;
+
+		} else if ( Array.isArray( array ) ) {
+
+			lineSegments = new Float32Array( array );
+
+		}
+
+		const instanceBuffer = new InstancedInterleavedBuffer( lineSegments, 6, 1 ); // xyz, xyz
+
+		this.setAttribute( 'instanceStart', new InterleavedBufferAttribute( instanceBuffer, 3, 0 ) ); // xyz
+		this.setAttribute( 'instanceEnd', new InterleavedBufferAttribute( instanceBuffer, 3, 3 ) ); // xyz
+
+		this.instanceCount = this.attributes.instanceStart.count;
+
+		//
+
+		this.computeBoundingBox();
+		this.computeBoundingSphere();
+
+		return this;
+
+	}
+
+	/**
+	 * Sets the given line colors for this geometry. The length must be a multiple of six since
+	 * each line segment is defined by a start end color in the pattern `(rgb rgb)`.
+	 *
+	 * @param {Float32Array|Array<number>} array - The position data to set.
+	 * @return {LineSegmentsGeometry} A reference to this geometry.
+	 */
+	setColors( array ) {
+
+		let colors;
+
+		if ( array instanceof Float32Array ) {
+
+			colors = array;
+
+		} else if ( Array.isArray( array ) ) {
+
+			colors = new Float32Array( array );
+
+		}
+
+		const instanceColorBuffer = new InstancedInterleavedBuffer( colors, 6, 1 ); // rgb, rgb
+
+		this.setAttribute( 'instanceColorStart', new InterleavedBufferAttribute( instanceColorBuffer, 3, 0 ) ); // rgb
+		this.setAttribute( 'instanceColorEnd', new InterleavedBufferAttribute( instanceColorBuffer, 3, 3 ) ); // rgb
+
+		return this;
+
+	}
+
+	/**
+	 * Setups this line segments geometry from the given wireframe geometry.
+	 *
+	 * @param {WireframeGeometry} geometry - The geometry that should be used as a data source for this geometry.
+	 * @return {LineSegmentsGeometry} A reference to this geometry.
+	 */
+	fromWireframeGeometry( geometry ) {
+
+		this.setPositions( geometry.attributes.position.array );
+
+		return this;
+
+	}
+
+	/**
+	 * Setups this line segments geometry from the given edges geometry.
+	 *
+	 * @param {EdgesGeometry} geometry - The geometry that should be used as a data source for this geometry.
+	 * @return {LineSegmentsGeometry} A reference to this geometry.
+	 */
+	fromEdgesGeometry( geometry ) {
+
+		this.setPositions( geometry.attributes.position.array );
+
+		return this;
+
+	}
+
+	/**
+	 * Setups this line segments geometry from the given mesh.
+	 *
+	 * @param {Mesh} mesh - The mesh geometry that should be used as a data source for this geometry.
+	 * @return {LineSegmentsGeometry} A reference to this geometry.
+	 */
+	fromMesh( mesh ) {
+
+		this.fromWireframeGeometry( new WireframeGeometry( mesh.geometry ) );
+
+		// set colors, maybe
+
+		return this;
+
+	}
+
+	/**
+	 * Setups this line segments geometry from the given line segments.
+	 *
+	 * @param {LineSegments} lineSegments - The line segments that should be used as a data source for this geometry.
+	 * Assumes the source geometry is not using indices.
+	 * @return {LineSegmentsGeometry} A reference to this geometry.
+	 */
+	fromLineSegments( lineSegments ) {
+
+		const geometry = lineSegments.geometry;
+
+		this.setPositions( geometry.attributes.position.array ); // assumes non-indexed
+
+		// set colors, maybe
+
+		return this;
+
+	}
+
+	computeBoundingBox() {
+
+		if ( this.boundingBox === null ) {
+
+			this.boundingBox = new Box3();
+
+		}
+
+		const start = this.attributes.instanceStart;
+		const end = this.attributes.instanceEnd;
+
+		if ( start !== undefined && end !== undefined ) {
+
+			this.boundingBox.setFromBufferAttribute( start );
+
+			line2_box.setFromBufferAttribute( end );
+
+			this.boundingBox.union( line2_box );
+
+		}
+
+	}
+
+	computeBoundingSphere() {
+
+		if ( this.boundingSphere === null ) {
+
+			this.boundingSphere = new Sphere();
+
+		}
+
+		if ( this.boundingBox === null ) {
+
+			this.computeBoundingBox();
+
+		}
+
+		const start = this.attributes.instanceStart;
+		const end = this.attributes.instanceEnd;
+
+		if ( start !== undefined && end !== undefined ) {
+
+			const center = this.boundingSphere.center;
+
+			this.boundingBox.getCenter( center );
+
+			let maxRadiusSq = 0;
+
+			for ( let i = 0, il = start.count; i < il; i ++ ) {
+
+				_vector.fromBufferAttribute( start, i );
+				maxRadiusSq = Math.max( maxRadiusSq, center.distanceToSquared( _vector ) );
+
+				_vector.fromBufferAttribute( end, i );
+				maxRadiusSq = Math.max( maxRadiusSq, center.distanceToSquared( _vector ) );
+
+			}
+
+			this.boundingSphere.radius = Math.sqrt( maxRadiusSq );
+
+			if ( isNaN( this.boundingSphere.radius ) ) {
+
+				console.error( 'THREE.LineSegmentsGeometry.computeBoundingSphere(): Computed radius is NaN. The instanced position data is likely to have NaN values.', this );
+
+			}
+
+		}
+
+	}
+
+	toJSON() {
+
+		// todo
+
+	}
+
+}
+
+class LineGeometry extends LineSegmentsGeometry {
+
+	/**
+	 * Constructs a new line geometry.
+	 */
+	constructor() {
+
+		super();
+
+		/**
+		 * This flag can be used for type testing.
+		 *
+		 * @type {boolean}
+		 * @readonly
+		 * @default true
+		 */
+		this.isLineGeometry = true;
+
+		this.type = 'LineGeometry';
+
+	}
+
+	/**
+	 * Sets the given line positions for this geometry.
+	 *
+	 * @param {Float32Array|Array<number>} array - The position data to set.
+	 * @return {LineGeometry} A reference to this geometry.
+	 */
+	setPositions( array ) {
+
+		// converts [ x1, y1, z1,  x2, y2, z2, ... ] to pairs format
+
+		const length = array.length - 3;
+		const points = new Float32Array( 2 * length );
+
+		for ( let i = 0; i < length; i += 3 ) {
+
+			points[ 2 * i ] = array[ i ];
+			points[ 2 * i + 1 ] = array[ i + 1 ];
+			points[ 2 * i + 2 ] = array[ i + 2 ];
+
+			points[ 2 * i + 3 ] = array[ i + 3 ];
+			points[ 2 * i + 4 ] = array[ i + 4 ];
+			points[ 2 * i + 5 ] = array[ i + 5 ];
+
+		}
+
+		super.setPositions( points );
+
+		return this;
+
+	}
+
+	/**
+	 * Sets the given line colors for this geometry.
+	 *
+	 * @param {Float32Array|Array<number>} array - The position data to set.
+	 * @return {LineGeometry} A reference to this geometry.
+	 */
+	setColors( array ) {
+
+		// converts [ r1, g1, b1,  r2, g2, b2, ... ] to pairs format
+
+		const length = array.length - 3;
+		const colors = new Float32Array( 2 * length );
+
+		for ( let i = 0; i < length; i += 3 ) {
+
+			colors[ 2 * i ] = array[ i ];
+			colors[ 2 * i + 1 ] = array[ i + 1 ];
+			colors[ 2 * i + 2 ] = array[ i + 2 ];
+
+			colors[ 2 * i + 3 ] = array[ i + 3 ];
+			colors[ 2 * i + 4 ] = array[ i + 4 ];
+			colors[ 2 * i + 5 ] = array[ i + 5 ];
+
+		}
+
+		super.setColors( colors );
+
+		return this;
+
+	}
+
+	/**
+	 * Setups this line segments geometry from the given sequence of points.
+	 *
+	 * @param {Array<Vector3|Vector2>} points - An array of points in 2D or 3D space.
+	 * @return {LineGeometry} A reference to this geometry.
+	 */
+	setFromPoints( points ) {
+
+		// converts a vector3 or vector2 array to pairs format
+
+		const length = points.length - 1;
+		const positions = new Float32Array( 6 * length );
+
+		for ( let i = 0; i < length; i ++ ) {
+
+			positions[ 6 * i ] = points[ i ].x;
+			positions[ 6 * i + 1 ] = points[ i ].y;
+			positions[ 6 * i + 2 ] = points[ i ].z || 0;
+
+			positions[ 6 * i + 3 ] = points[ i + 1 ].x;
+			positions[ 6 * i + 4 ] = points[ i + 1 ].y;
+			positions[ 6 * i + 5 ] = points[ i + 1 ].z || 0;
+
+		}
+
+		super.setPositions( positions );
+
+		return this;
+
+	}
+
+	/**
+	 * Setups this line segments geometry from the given line.
+	 *
+	 * @param {Line} line - The line that should be used as a data source for this geometry.
+	 * @return {LineGeometry} A reference to this geometry.
+	 */
+	fromLine( line ) {
+
+		const geometry = line.geometry;
+
+		this.setPositions( geometry.attributes.position.array ); // assumes non-indexed
+
+		// set colors, maybe
+
+		return this;
+
+	}
+
+}
+
+UniformsLib.line = {
+
+	worldUnits: { value: 1 },
+	linewidth: { value: 1 },
+	resolution: { value: new Vector2( 1, 1 ) },
+	dashOffset: { value: 0 },
+	dashScale: { value: 1 },
+	dashSize: { value: 1 },
+	gapSize: { value: 1 } // todo FIX - maybe change to totalSize
+
+};
+
+ShaderLib[ 'line' ] = {
+
+	uniforms: UniformsUtils.merge( [
+		UniformsLib.common,
+		UniformsLib.fog,
+		UniformsLib.line
+	] ),
+
+	vertexShader:
+	/* glsl */`
+		#include <common>
+		#include <color_pars_vertex>
+		#include <fog_pars_vertex>
+		#include <logdepthbuf_pars_vertex>
+		#include <clipping_planes_pars_vertex>
+
+		uniform float linewidth;
+		uniform vec2 resolution;
+
+		attribute vec3 instanceStart;
+		attribute vec3 instanceEnd;
+
+		attribute vec3 instanceColorStart;
+		attribute vec3 instanceColorEnd;
+
+		#ifdef WORLD_UNITS
+
+			varying vec4 worldPos;
+			varying vec3 worldStart;
+			varying vec3 worldEnd;
+
+			#ifdef USE_DASH
+
+				varying vec2 vUv;
+
+			#endif
+
+		#else
+
+			varying vec2 vUv;
+
+		#endif
+
+		#ifdef USE_DASH
+
+			uniform float dashScale;
+			attribute float instanceDistanceStart;
+			attribute float instanceDistanceEnd;
+			varying float vLineDistance;
+
+		#endif
+
+		void trimSegment( const in vec4 start, inout vec4 end ) {
+
+			// trim end segment so it terminates between the camera plane and the near plane
+
+			// conservative estimate of the near plane
+			float a = projectionMatrix[ 2 ][ 2 ]; // 3nd entry in 3th column
+			float b = projectionMatrix[ 3 ][ 2 ]; // 3nd entry in 4th column
+			float nearEstimate = - 0.5 * b / a;
+
+			float alpha = ( nearEstimate - start.z ) / ( end.z - start.z );
+
+			end.xyz = mix( start.xyz, end.xyz, alpha );
+
+		}
+
+		void main() {
+
+			#ifdef USE_COLOR
+
+				vColor.xyz = ( position.y < 0.5 ) ? instanceColorStart : instanceColorEnd;
+
+			#endif
+
+			#ifdef USE_DASH
+
+				vLineDistance = ( position.y < 0.5 ) ? dashScale * instanceDistanceStart : dashScale * instanceDistanceEnd;
+				vUv = uv;
+
+			#endif
+
+			float aspect = resolution.x / resolution.y;
+
+			// camera space
+			vec4 start = modelViewMatrix * vec4( instanceStart, 1.0 );
+			vec4 end = modelViewMatrix * vec4( instanceEnd, 1.0 );
+
+			#ifdef WORLD_UNITS
+
+				worldStart = start.xyz;
+				worldEnd = end.xyz;
+
+			#else
+
+				vUv = uv;
+
+			#endif
+
+			// special case for perspective projection, and segments that terminate either in, or behind, the camera plane
+			// clearly the gpu firmware has a way of addressing this issue when projecting into ndc space
+			// but we need to perform ndc-space calculations in the shader, so we must address this issue directly
+			// perhaps there is a more elegant solution -- WestLangley
+
+			bool perspective = ( projectionMatrix[ 2 ][ 3 ] == - 1.0 ); // 4th entry in the 3rd column
+
+			if ( perspective ) {
+
+				if ( start.z < 0.0 && end.z >= 0.0 ) {
+
+					trimSegment( start, end );
+
+				} else if ( end.z < 0.0 && start.z >= 0.0 ) {
+
+					trimSegment( end, start );
+
+				}
+
+			}
+
+			// clip space
+			vec4 clipStart = projectionMatrix * start;
+			vec4 clipEnd = projectionMatrix * end;
+
+			// ndc space
+			vec3 ndcStart = clipStart.xyz / clipStart.w;
+			vec3 ndcEnd = clipEnd.xyz / clipEnd.w;
+
+			// direction
+			vec2 dir = ndcEnd.xy - ndcStart.xy;
+
+			// account for clip-space aspect ratio
+			dir.x *= aspect;
+			dir = normalize( dir );
+
+			#ifdef WORLD_UNITS
+
+				vec3 worldDir = normalize( end.xyz - start.xyz );
+				vec3 tmpFwd = normalize( mix( start.xyz, end.xyz, 0.5 ) );
+				vec3 worldUp = normalize( cross( worldDir, tmpFwd ) );
+				vec3 worldFwd = cross( worldDir, worldUp );
+				worldPos = position.y < 0.5 ? start: end;
+
+				// height offset
+				float hw = linewidth * 0.5;
+				worldPos.xyz += position.x < 0.0 ? hw * worldUp : - hw * worldUp;
+
+				// don't extend the line if we're rendering dashes because we
+				// won't be rendering the endcaps
+				#ifndef USE_DASH
+
+					// cap extension
+					worldPos.xyz += position.y < 0.5 ? - hw * worldDir : hw * worldDir;
+
+					// add width to the box
+					worldPos.xyz += worldFwd * hw;
+
+					// endcaps
+					if ( position.y > 1.0 || position.y < 0.0 ) {
+
+						worldPos.xyz -= worldFwd * 2.0 * hw;
+
+					}
+
+				#endif
+
+				// project the worldpos
+				vec4 clip = projectionMatrix * worldPos;
+
+				// shift the depth of the projected points so the line
+				// segments overlap neatly
+				vec3 clipPose = ( position.y < 0.5 ) ? ndcStart : ndcEnd;
+				clip.z = clipPose.z * clip.w;
+
+			#else
+
+				vec2 offset = vec2( dir.y, - dir.x );
+				// undo aspect ratio adjustment
+				dir.x /= aspect;
+				offset.x /= aspect;
+
+				// sign flip
+				if ( position.x < 0.0 ) offset *= - 1.0;
+
+				// endcaps
+				if ( position.y < 0.0 ) {
+
+					offset += - dir;
+
+				} else if ( position.y > 1.0 ) {
+
+					offset += dir;
+
+				}
+
+				// adjust for linewidth
+				offset *= linewidth;
+
+				// adjust for clip-space to screen-space conversion // maybe resolution should be based on viewport ...
+				offset /= resolution.y;
+
+				// select end
+				vec4 clip = ( position.y < 0.5 ) ? clipStart : clipEnd;
+
+				// back to clip space
+				offset *= clip.w;
+
+				clip.xy += offset;
+
+			#endif
+
+			gl_Position = clip;
+
+			vec4 mvPosition = ( position.y < 0.5 ) ? start : end; // this is an approximation
+
+			#include <logdepthbuf_vertex>
+			#include <clipping_planes_vertex>
+			#include <fog_vertex>
+
+		}
+		`,
+
+	fragmentShader:
+	/* glsl */`
+		uniform vec3 diffuse;
+		uniform float opacity;
+		uniform float linewidth;
+
+		#ifdef USE_DASH
+
+			uniform float dashOffset;
+			uniform float dashSize;
+			uniform float gapSize;
+
+		#endif
+
+		varying float vLineDistance;
+
+		#ifdef WORLD_UNITS
+
+			varying vec4 worldPos;
+			varying vec3 worldStart;
+			varying vec3 worldEnd;
+
+			#ifdef USE_DASH
+
+				varying vec2 vUv;
+
+			#endif
+
+		#else
+
+			varying vec2 vUv;
+
+		#endif
+
+		#include <common>
+		#include <color_pars_fragment>
+		#include <fog_pars_fragment>
+		#include <logdepthbuf_pars_fragment>
+		#include <clipping_planes_pars_fragment>
+
+		vec2 closestLineToLine(vec3 p1, vec3 p2, vec3 p3, vec3 p4) {
+
+			float mua;
+			float mub;
+
+			vec3 p13 = p1 - p3;
+			vec3 p43 = p4 - p3;
+
+			vec3 p21 = p2 - p1;
+
+			float d1343 = dot( p13, p43 );
+			float d4321 = dot( p43, p21 );
+			float d1321 = dot( p13, p21 );
+			float d4343 = dot( p43, p43 );
+			float d2121 = dot( p21, p21 );
+
+			float denom = d2121 * d4343 - d4321 * d4321;
+
+			float numer = d1343 * d4321 - d1321 * d4343;
+
+			mua = numer / denom;
+			mua = clamp( mua, 0.0, 1.0 );
+			mub = ( d1343 + d4321 * ( mua ) ) / d4343;
+			mub = clamp( mub, 0.0, 1.0 );
+
+			return vec2( mua, mub );
+
+		}
+
+		void main() {
+
+			#include <clipping_planes_fragment>
+
+			#ifdef USE_DASH
+
+				if ( vUv.y < - 1.0 || vUv.y > 1.0 ) discard; // discard endcaps
+
+				if ( mod( vLineDistance + dashOffset, dashSize + gapSize ) > dashSize ) discard; // todo - FIX
+
+			#endif
+
+			float alpha = opacity;
+
+			#ifdef WORLD_UNITS
+
+				// Find the closest points on the view ray and the line segment
+				vec3 rayEnd = normalize( worldPos.xyz ) * 1e5;
+				vec3 lineDir = worldEnd - worldStart;
+				vec2 params = closestLineToLine( worldStart, worldEnd, vec3( 0.0, 0.0, 0.0 ), rayEnd );
+
+				vec3 p1 = worldStart + lineDir * params.x;
+				vec3 p2 = rayEnd * params.y;
+				vec3 delta = p1 - p2;
+				float len = length( delta );
+				float norm = len / linewidth;
+
+				#ifndef USE_DASH
+
+					#ifdef USE_ALPHA_TO_COVERAGE
+
+						float dnorm = fwidth( norm );
+						alpha = 1.0 - smoothstep( 0.5 - dnorm, 0.5 + dnorm, norm );
+
+					#else
+
+						if ( norm > 0.5 ) {
+
+							discard;
+
+						}
+
+					#endif
+
+				#endif
+
+			#else
+
+				#ifdef USE_ALPHA_TO_COVERAGE
+
+					// artifacts appear on some hardware if a derivative is taken within a conditional
+					float a = vUv.x;
+					float b = ( vUv.y > 0.0 ) ? vUv.y - 1.0 : vUv.y + 1.0;
+					float len2 = a * a + b * b;
+					float dlen = fwidth( len2 );
+
+					if ( abs( vUv.y ) > 1.0 ) {
+
+						alpha = 1.0 - smoothstep( 1.0 - dlen, 1.0 + dlen, len2 );
+
+					}
+
+				#else
+
+					if ( abs( vUv.y ) > 1.0 ) {
+
+						float a = vUv.x;
+						float b = ( vUv.y > 0.0 ) ? vUv.y - 1.0 : vUv.y + 1.0;
+						float len2 = a * a + b * b;
+
+						if ( len2 > 1.0 ) discard;
+
+					}
+
+				#endif
+
+			#endif
+
+			vec4 diffuseColor = vec4( diffuse, alpha );
+
+			#include <logdepthbuf_fragment>
+			#include <color_fragment>
+
+			gl_FragColor = vec4( diffuseColor.rgb, alpha );
+
+			#include <tonemapping_fragment>
+			#include <colorspace_fragment>
+			#include <fog_fragment>
+			#include <premultiplied_alpha_fragment>
+
+		}
+		`
+};
+
+/**
+ * A material for drawing wireframe-style geometries.
+ *
+ * Unlike {@link LineBasicMaterial}, it supports arbitrary line widths and allows using world units
+ * instead of screen space units. This material is used with {@link LineSegments2} and {@link Line2}.
+ *
+ * This module can only be used with {@link WebGLRenderer}. When using {@link WebGPURenderer},
+ * use {@link Line2NodeMaterial}.
+ *
+ * @augments ShaderMaterial
+ */
+class LineMaterial extends ShaderMaterial {
+
+	/**
+	 * Constructs a new line segments geometry.
+	 *
+	 * @param {Object} [parameters] - An object with one or more properties
+	 * defining the material's appearance. Any property of the material
+	 * (including any property from inherited materials) can be passed
+	 * in here. Color values can be passed any type of value accepted
+	 * by {@link Color#set}.
+	 */
+	constructor( parameters ) {
+
+		super( {
+
+			type: 'LineMaterial',
+			uniforms: UniformsUtils.clone( ShaderLib[ 'line' ].uniforms ),
+
+			vertexShader: ShaderLib[ 'line' ].vertexShader,
+			fragmentShader: ShaderLib[ 'line' ].fragmentShader,
+
+			clipping: true // required for clipping support
+
+		} );
+
+		/**
+		 * This flag can be used for type testing.
+		 *
+		 * @type {boolean}
+		 * @readonly
+		 * @default true
+		 */
+		this.isLineMaterial = true;
+
+		this.setValues( parameters );
+
+	}
+
+	/**
+	 * The material's color.
+	 *
+	 * @type {Color}
+	 * @default (1,1,1)
+	 */
+	get color() {
+
+		return this.uniforms.diffuse.value;
+
+	}
+
+	set color( value ) {
+
+		this.uniforms.diffuse.value = value;
+
+	}
+
+	/**
+	 * Whether the material's sizes (width, dash gaps) are in world units.
+	 *
+	 * @type {boolean}
+	 * @default false
+	 */
+	get worldUnits() {
+
+		return 'WORLD_UNITS' in this.defines;
+
+	}
+
+	set worldUnits( value ) {
+
+		if ( value === true ) {
+
+			this.defines.WORLD_UNITS = '';
+
+		} else {
+
+			delete this.defines.WORLD_UNITS;
+
+		}
+
+	}
+
+	/**
+	 * Controls line thickness in CSS pixel units when `worldUnits` is `false` (default),
+	 * or in world units when `worldUnits` is `true`.
+	 *
+	 * @type {number}
+	 * @default 1
+	 */
+	get linewidth() {
+
+		return this.uniforms.linewidth.value;
+
+	}
+
+	set linewidth( value ) {
+
+		if ( ! this.uniforms.linewidth ) return;
+		this.uniforms.linewidth.value = value;
+
+	}
+
+	/**
+	 * Whether the line is dashed, or solid.
+	 *
+	 * @type {boolean}
+	 * @default false
+	 */
+	get dashed() {
+
+		return 'USE_DASH' in this.defines;
+
+	}
+
+	set dashed( value ) {
+
+		if ( ( value === true ) !== this.dashed ) {
+
+			this.needsUpdate = true;
+
+		}
+
+		if ( value === true ) {
+
+			this.defines.USE_DASH = '';
+
+		} else {
+
+			delete this.defines.USE_DASH;
+
+		}
+
+	}
+
+	/**
+	 * The scale of the dashes and gaps.
+	 *
+	 * @type {number}
+	 * @default 1
+	 */
+	get dashScale() {
+
+		return this.uniforms.dashScale.value;
+
+	}
+
+	set dashScale( value ) {
+
+		this.uniforms.dashScale.value = value;
+
+	}
+
+	/**
+	 * The size of the dash.
+	 *
+	 * @type {number}
+	 * @default 1
+	 */
+	get dashSize() {
+
+		return this.uniforms.dashSize.value;
+
+	}
+
+	set dashSize( value ) {
+
+		this.uniforms.dashSize.value = value;
+
+	}
+
+	/**
+	 * Where in the dash cycle the dash starts.
+	 *
+	 * @type {number}
+	 * @default 0
+	 */
+	get dashOffset() {
+
+		return this.uniforms.dashOffset.value;
+
+	}
+
+	set dashOffset( value ) {
+
+		this.uniforms.dashOffset.value = value;
+
+	}
+
+	/**
+	 * The size of the gap.
+	 *
+	 * @type {number}
+	 * @default 0
+	 */
+	get gapSize() {
+
+		return this.uniforms.gapSize.value;
+
+	}
+
+	set gapSize( value ) {
+
+		this.uniforms.gapSize.value = value;
+
+	}
+
+	/**
+	 * The opacity.
+	 *
+	 * @type {number}
+	 * @default 1
+	 */
+	get opacity() {
+
+		return this.uniforms.opacity.value;
+
+	}
+
+	set opacity( value ) {
+
+		if ( ! this.uniforms ) return;
+		this.uniforms.opacity.value = value;
+
+	}
+
+	/**
+	 * The size of the viewport, in screen pixels. This must be kept updated to make
+	 * screen-space rendering accurate.The `LineSegments2.onBeforeRender` callback
+	 * performs the update for visible objects.
+	 *
+	 * @type {Vector2}
+	 */
+	get resolution() {
+
+		return this.uniforms.resolution.value;
+
+	}
+
+	set resolution( value ) {
+
+		this.uniforms.resolution.value.copy( value );
+
+	}
+
+	/**
+	 * Whether to use alphaToCoverage or not. When enabled, this can improve the
+	 * anti-aliasing of line edges when using MSAA.
+	 *
+	 * @type {boolean}
+	 */
+	get alphaToCoverage() {
+
+		return 'USE_ALPHA_TO_COVERAGE' in this.defines;
+
+	}
+
+	set alphaToCoverage( value ) {
+
+		if ( ! this.defines ) return;
+
+		if ( ( value === true ) !== this.alphaToCoverage ) {
+
+			this.needsUpdate = true;
+
+		}
+
+		if ( value === true ) {
+
+			this.defines.USE_ALPHA_TO_COVERAGE = '';
+
+		} else {
+
+			delete this.defines.USE_ALPHA_TO_COVERAGE;
+
+		}
+
+	}
+
+}
+
+
+class Line2 extends LineSegments2 {
+
+	/**
+	 * Constructs a new wide line.
+	 *
+	 * @param {LineGeometry} [geometry] - The line geometry.
+	 * @param {LineMaterial} [material] - The line material.
+	 */
+	constructor( geometry = new LineGeometry(), material = new LineMaterial( { color: Math.random() * 0xffffff } ) ) {
+
+		super( geometry, material );
+
+		/**
+		 * This flag can be used for type testing.
+		 *
+		 * @type {boolean}
+		 * @readonly
+		 * @default true
+		 */
+		this.isLine2 = true;
+
+		this.type = 'Line2';
+
+	}
+
+}
+
+
+/**
+ * The only type of 3D object that is supported by {@link CSS2DRenderer}.
+ *
+ * @augments Object3D
+ */
+class CSS2DObject extends Object3D {
+
+	/**
+	 * Constructs a new CSS2D object.
+	 *
+	 * @param {DOMElement} [element] - The DOM element.
+	 */
+	constructor( element = document.createElement( 'div' ) ) {
+
+		super();
+
+		/**
+		 * This flag can be used for type testing.
+		 *
+		 * @type {boolean}
+		 * @readonly
+		 * @default true
+		 */
+		this.isCSS2DObject = true;
+
+		/**
+		 * The DOM element which defines the appearance of this 3D object.
+		 *
+		 * @type {DOMElement}
+		 * @readonly
+		 * @default true
+		 */
+		this.element = element;
+
+		this.element.style.position = 'absolute';
+		this.element.style.userSelect = 'none';
+
+		this.element.setAttribute( 'draggable', false );
+
+		/**
+		 * The 3D objects center point.
+		 * `( 0, 0 )` is the lower left, `( 1, 1 )` is the top right.
+		 *
+		 * @type {Vector2}
+		 * @default (0.5,0.5)
+		 */
+		this.center = new Vector2( 0.5, 0.5 );
+
+		this.addEventListener( 'removed', function () {
+
+			this.traverse( function ( object ) {
+
+				if (
+					object.element instanceof object.element.ownerDocument.defaultView.Element &&
+					object.element.parentNode !== null
+				) {
+
+					object.element.remove();
+
+				}
+
+			} );
+
+		} );
+
+	}
+
+	copy( source, recursive ) {
+
+		super.copy( source, recursive );
+
+		this.element = source.element.cloneNode( true );
+
+		this.center = source.center;
+
+		return this;
+
+	}
+
+}
+
+//
+
+const CSS2D_vector = new Vector3();
+const CSS2D_viewMatrix = new Matrix4();
+const CSS2D_viewProjectionMatrix = new Matrix4();
+const CSS2D_a = new Vector3();
+const CSS2D_b = new Vector3();
+
+/**
+ * This renderer is a simplified version of {@link CSS3DRenderer}. The only transformation that is
+ * supported is translation.
+ *
+ * The renderer is very useful if you want to combine HTML based labels with 3D objects. Here too,
+ * the respective DOM elements are wrapped into an instance of {@link CSS2DObject} and added to the
+ * scene graph. All other types of renderable 3D objects (like meshes or point clouds) are ignored.
+ *
+ * `CSS2DRenderer` only supports 100% browser and display zoom.
+ */
+class CSS2DRenderer {
+
+	/**
+	 * Constructs a new CSS2D renderer.
+	 *
+	 * @param {CSS2DRenderer~Parameters} [parameters] - The parameters.
+	 */
+	constructor( parameters = {} ) {
+
+		const _this = this;
+
+		let _width, _height;
+		let _widthHalf, _heightHalf;
+
+		const cache = {
+			objects: new WeakMap()
+		};
+
+		const domElement = parameters.element !== undefined ? parameters.element : document.createElement( 'div' );
+
+		domElement.style.overflow = 'hidden';
+
+		/**
+		 * The DOM where the renderer appends its child-elements.
+		 *
+		 * @type {DOMElement}
+		 */
+		this.domElement = domElement;
+
+		/**
+		 * Returns an object containing the width and height of the renderer.
+		 *
+		 * @return {{width:number,height:number}} The size of the renderer.
+		 */
+		this.getSize = function () {
+
+			return {
+				width: _width,
+				height: _height
+			};
+
+		};
+
+		/**
+		 * Renders the given scene using the given camera.
+		 *
+		 * @param {Object3D} scene - A scene or any other type of 3D object.
+		 * @param {Camera} camera - The camera.
+		 */
+		this.render = function ( scene, camera ) {
+
+			if ( scene.matrixWorldAutoUpdate === true ) scene.updateMatrixWorld();
+			if ( camera.parent === null && camera.matrixWorldAutoUpdate === true ) camera.updateMatrixWorld();
+
+			CSS2D_viewMatrix.copy( camera.matrixWorldInverse );
+			CSS2D_viewProjectionMatrix.multiplyMatrices( camera.projectionMatrix, CSS2D_viewMatrix );
+
+			renderObject( scene, scene, camera );
+			zOrder( scene );
+
+		};
+
+		/**
+		 * Resizes the renderer to the given width and height.
+		 *
+		 * @param {number} width - The width of the renderer.
+		 * @param {number} height - The height of the renderer.
+		 */
+		this.setSize = function ( width, height ) {
+
+			_width = width;
+			_height = height;
+
+			_widthHalf = _width / 2;
+			_heightHalf = _height / 2;
+
+			domElement.style.width = width + 'px';
+			domElement.style.height = height + 'px';
+
+		};
+
+		function hideObject( object ) {
+
+			if ( object.isCSS2DObject ) object.element.style.display = 'none';
+
+			for ( let i = 0, l = object.children.length; i < l; i ++ ) {
+
+				hideObject( object.children[ i ] );
+
+			}
+
+		}
+
+		function renderObject( object, scene, camera ) {
+
+			if ( object.visible === false ) {
+
+				hideObject( object );
+
+				return;
+
+			}
+
+			if ( object.isCSS2DObject ) {
+
+				CSS2D_vector.setFromMatrixPosition( object.matrixWorld );
+				CSS2D_vector.applyMatrix4( CSS2D_viewProjectionMatrix );
+
+				const visible = ( CSS2D_vector.z >= - 1 && CSS2D_vector.z <= 1 ) && ( object.layers.test( camera.layers ) === true );
+
+				const element = object.element;
+				element.style.display = visible === true ? '' : 'none';
+
+				if ( visible === true ) {
+
+					object.onBeforeRender( _this, scene, camera );
+
+					element.style.transform = 'translate(' + ( - 100 * object.center.x ) + '%,' + ( - 100 * object.center.y ) + '%)' + 'translate(' + ( CSS2D_vector.x * _widthHalf + _widthHalf ) + 'px,' + ( - CSS2D_vector.y * _heightHalf + _heightHalf ) + 'px)';
+
+					if ( element.parentNode !== domElement ) {
+
+						domElement.appendChild( element );
+
+					}
+
+					object.onAfterRender( _this, scene, camera );
+
+				}
+
+				const objectData = {
+					distanceToCameraSquared: getDistanceToSquared( camera, object )
+				};
+
+				cache.objects.set( object, objectData );
+
+			}
+
+			for ( let i = 0, l = object.children.length; i < l; i ++ ) {
+
+				renderObject( object.children[ i ], scene, camera );
+
+			}
+
+		}
+
+		function getDistanceToSquared( object1, object2 ) {
+
+			CSS2D_a.setFromMatrixPosition( object1.matrixWorld );
+			CSS2D_b.setFromMatrixPosition( object2.matrixWorld );
+
+			return CSS2D_a.distanceToSquared( CSS2D_b );
+
+		}
+
+		function filterAndFlatten( scene ) {
+
+			const result = [];
+
+			scene.traverseVisible( function ( object ) {
+
+				if ( object.isCSS2DObject ) result.push( object );
+
+			} );
+
+			return result;
+
+		}
+
+		function zOrder( scene ) {
+
+			const sorted = filterAndFlatten( scene ).sort( function ( a, b ) {
+
+				if ( a.renderOrder !== b.renderOrder ) {
+
+					return b.renderOrder - a.renderOrder;
+
+				}
+
+				const distanceA = cache.objects.get( a ).distanceToCameraSquared;
+				const distanceB = cache.objects.get( b ).distanceToCameraSquared;
+
+				return distanceA - distanceB;
+
+			} );
+
+			const zMax = sorted.length;
+
+			for ( let i = 0, l = sorted.length; i < l; i ++ ) {
+
+				sorted[ i ].element.style.zIndex = zMax - i;
+
+			}
+
+		}
+
+	}
+
+}
+
+/**
+ * Constructor parameters of `CSS2DRenderer`.
+ *
+ * @typedef {Object} CSS2DRenderer~Parameters
+ * @property {DOMElement} [element] - A DOM element where the renderer appends its child-elements.
+ * If not passed in here, a new div element will be created.
+ **/
+
+
 // ******************** IKUN_END ***********************
 
 
@@ -87171,6 +88792,13 @@ exports.FXAAShader = FXAAShader;
 exports.TransformControls = TransformControls;
 exports.TransformControlsGizmo = TransformControlsGizmo;
 exports.TransformControlsPlane = TransformControlsPlane;
+exports.LineGeometry = LineGeometry;
+exports.LineMaterial = LineMaterial;
+exports.LineSegments2 = LineSegments2;
+exports.LineSegmentsGeometry = LineSegmentsGeometry;
+exports.Line2 = Line2;
+exports.CSS2DObject = CSS2DObject;
+exports.CSS2DRenderer = CSS2DRenderer;
 
 	Object.defineProperty(exports, '__esModule', { value: true });
 }));
