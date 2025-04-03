@@ -33,6 +33,7 @@ onMounted(() => {
     },
     onLoad: () => {
       console.log('加载完毕')
+      container.test()
     }
   })
   container.dbClick = (e) => {

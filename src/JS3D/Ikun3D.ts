@@ -1,9 +1,6 @@
 // @ts-nocheck
 import * as TWEEN from '@tweenjs/tween.js'
 import { CACHE } from './CACHE'
-import { API } from './API'
-import { DATA } from './DATA'
-import { STATE } from './STATE'
 import { UTIL } from './UTIL'
 
 
@@ -155,6 +152,7 @@ function initRGBPass(container) {
   gui.add(container.RGBPass.material.uniforms.color.value, 'r', 0, 2).name('红');
   gui.add(container.RGBPass.material.uniforms.color.value, 'g', 0, 2).name('绿');
   gui.add(container.RGBPass.material.uniforms.color.value, 'b', 0, 2).name('蓝');
+  container.RGBGUI = gui
 }
 
 function initFXAA(container) {
@@ -258,7 +256,7 @@ class Container {
     this.resize()
     this.mouseEvent()
     this.initPass()
-    this.test()
+    // this.test()
     this.animate()
 
     // 后续加载
@@ -290,13 +288,12 @@ class Container {
     } else {
       Ikun3D.container = [this]
     }
-    window.container = this
     CACHE.container = this
   }
 
   initScene() {
     const scene = new Ikun3D.Scene();
-    const camera = new Ikun3D.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100000);
+    const camera = new Ikun3D.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100000);
     const renderer = new Ikun3D.WebGLRenderer({ logarithmicDepthBuffer: true });
     const control = new Ikun3D.OrbitControls(camera, renderer.domElement);
     this.scene = scene
@@ -354,36 +351,36 @@ class Container {
     }
 
     const obj = {
-      width: container.directionalLight.shadow.camera.right,
-      height: container.directionalLight.shadow.camera.top,
+      width: CACHE.container.directionalLight.shadow.camera.right,
+      height: CACHE.container.directionalLight.shadow.camera.top,
       setPositionFunc: () => {
         this.transformControl.attach(directionalLight)
       },
       setTargetFunc: () => {
         this.transformControl.attach(directionalLight.target)
       },
-      mapSize: container.directionalLight.shadow.mapSize.x
+      mapSize: CACHE.container.directionalLight.shadow.mapSize.x
     }
 
     const gui = new dat.GUI();
     const folder1 = gui.addFolder('相机位置及目标')
     folder1.open()
-    folder1.add(container.directionalLight.position, 'x').step(1).name('位置 X')
-    folder1.add(container.directionalLight.position, 'y').step(1).name('位置 Y')
-    folder1.add(container.directionalLight.position, 'z').step(1).name('位置 Z')
-    folder1.add(container.directionalLight.target.position, 'x').step(1).name('目标 X')
-    folder1.add(container.directionalLight.target.position, 'y').step(1).name('目标 Y')
-    folder1.add(container.directionalLight.target.position, 'z').step(1).name('目标 Z')
+    folder1.add(CACHE.container.directionalLight.position, 'x').step(1).name('位置 X')
+    folder1.add(CACHE.container.directionalLight.position, 'y').step(1).name('位置 Y')
+    folder1.add(CACHE.container.directionalLight.position, 'z').step(1).name('位置 Z')
+    folder1.add(CACHE.container.directionalLight.target.position, 'x').step(1).name('目标 X')
+    folder1.add(CACHE.container.directionalLight.target.position, 'y').step(1).name('目标 Y')
+    folder1.add(CACHE.container.directionalLight.target.position, 'z').step(1).name('目标 Z')
 
 
     const folder2 = gui.addFolder('阴影范围')
     folder2.open()
-    folder2.add(container.directionalLight.shadow.camera, 'far').step(1).name('阴影范围 最远')
-    folder2.add(container.directionalLight.shadow.camera, 'near').step(1).name('阴影范围 最近')
+    folder2.add(CACHE.container.directionalLight.shadow.camera, 'far').step(1).name('阴影范围 最远')
+    folder2.add(CACHE.container.directionalLight.shadow.camera, 'near').step(1).name('阴影范围 最近')
     folder2.add(obj, 'width').step(1).name('阴影范围 宽').onChange(val => updateShadow('width', val))
     folder2.add(obj, 'height').step(1).name('阴影范围 高').onChange(val => updateShadow('height', val))
-    folder2.add(container.directionalLight.shadow, 'radius').name('阴影半径')
-    folder2.add(container.directionalLight.shadow, 'bias').step(0.0001).name('阴影偏移')
+    folder2.add(CACHE.container.directionalLight.shadow, 'radius').name('阴影半径')
+    folder2.add(CACHE.container.directionalLight.shadow, 'bias').step(0.0001).name('阴影偏移')
     folder2.add(obj, 'mapSize', [512, 1024, 2048, 4096, 8192]).name('阴影分辨率').onChange(val => updateShadow('mapSize', val))
 
 
@@ -458,7 +455,7 @@ class Container {
     const plane = new Ikun3D.Mesh(planeG, planeM)
     plane.rotation.x = -Math.PI / 2
     plane.position.y = -0.5
-    container.scene.add(plane)
+    CACHE.container.scene.add(plane)
     plane.receiveShadow = true
 
 

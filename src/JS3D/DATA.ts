@@ -1,0 +1,5 @@
+const DATA = {
+
+}
+
+export { DATA }
