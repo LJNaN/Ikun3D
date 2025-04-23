@@ -88349,7 +88349,7 @@ class CSS2DRenderer {
  **/
 
 
-/ Based on http://www.emagix.net/academic/mscs-project/item/camera-sync-with-css3-and-webgl-threejs
+// Based on http://www.emagix.net/academic/mscs-project/item/camera-sync-with-css3-and-webgl-threejs
 
 const CSS3D_position = new Vector3();
 const CSS3D_quaternion = new Quaternion();
@@ -88475,8 +88475,8 @@ class CSS3DSprite extends CSS3DObject {
 
 //
 
-const _matrix = new Matrix4();
-const _matrix2 = new Matrix4();
+const CSS3D_matrix = new Matrix4();
+const CSS3D_matrix2 = new Matrix4();
 
 /**
  * This renderer can be used to apply hierarchical 3D transformations to DOM elements
@@ -88725,21 +88725,21 @@ class CSS3DRenderer {
 
 						// http://swiftcoder.wordpress.com/2008/11/25/constructing-a-billboard-matrix/
 
-						_matrix.copy( camera.matrixWorldInverse );
-						_matrix.transpose();
+						CSS3D_matrix.copy( camera.matrixWorldInverse );
+						CSS3D_matrix.transpose();
 
-						if ( object.rotation2D !== 0 ) _matrix.multiply( _matrix2.makeRotationZ( object.rotation2D ) );
+						if ( object.rotation2D !== 0 ) CSS3D_matrix.multiply( CSS3D_matrix2.makeRotationZ( object.rotation2D ) );
 
 						object.matrixWorld.decompose( CSS3D_position, CSS3D_quaternion, CSS3D_scale );
-						_matrix.setPosition( CSS3D_position );
-						_matrix.scale( CSS3D_scale );
+						CSS3D_matrix.setPosition( CSS3D_position );
+						CSS3D_matrix.scale( CSS3D_scale );
 
-						_matrix.elements[ 3 ] = 0;
-						_matrix.elements[ 7 ] = 0;
-						_matrix.elements[ 11 ] = 0;
-						_matrix.elements[ 15 ] = 1;
+						CSS3D_matrix.elements[ 3 ] = 0;
+						CSS3D_matrix.elements[ 7 ] = 0;
+						CSS3D_matrix.elements[ 11 ] = 0;
+						CSS3D_matrix.elements[ 15 ] = 1;
 
-						style = getObjectCSSMatrix( _matrix );
+						style = getObjectCSSMatrix( CSS3D_matrix );
 
 					} else {
 
