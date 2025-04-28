@@ -3,13 +3,8 @@ import * as TWEEN from '@tweenjs/tween.js'
 import { CACHE } from './CACHE'
 import { UTIL } from './UTIL'
 
-
 function initBloomPass(container) {
   // ********* 辉光start *********
-  const BLOOM_LAYER = 1;
-  const bloomLayer = new Ikun3D.Layers();
-  bloomLayer.set(BLOOM_LAYER);
-
   const bloomComposer = new Ikun3D.EffectComposer(container.renderer);
   bloomComposer.renderToScreen = false; // 不渲染到屏幕上
   bloomComposer.addPass(container.renderPass);
@@ -28,7 +23,7 @@ function initBloomPass(container) {
 
 
   const bloomPass = new Ikun3D.UnrealBloomPass(
-    new Ikun3D.Vector2(container.renderer.domElement.innerWidth, container.renderer.domElement.innerHeight),
+    new Ikun3D.Vector2(container.renderer.domElement.clientWidth, container.renderer.domElement.clientHeight),
     0.8,
     0.8,
     0.1,
@@ -90,7 +85,7 @@ function initBloomPass(container) {
 
 function initOutlinePass(container) {
   const composer = container.composer
-  const outlinePass = new Ikun3D.OutlinePass(new Ikun3D.Vector2(window.innerWidth, window.innerHeight), container.scene, container.camera);
+  const outlinePass = new Ikun3D.OutlinePass(new Ikun3D.Vector2(container.renderer.domElement.clientWidth, container.renderer.domElement.clientHeight), container.scene, container.camera);
   outlinePass.selectedObjects = container.outlineObjects
   container.outlinePass = outlinePass
   composer.addPass(outlinePass);
@@ -157,7 +152,7 @@ function initRGBPass(container) {
 
 function initFXAA(container) {
   const fxaaPass = new Ikun3D.ShaderPass(Ikun3D.FXAAShader)
-  fxaaPass.material.uniforms['resolution'].value.set(1 / window.innerWidth, 1 / window.innerHeight)
+  fxaaPass.material.uniforms['resolution'].value.set(1 / container.renderer.domElement.clientWidth, 1 / container.renderer.domElement.clientHeight)
   container.composer.addPass(fxaaPass)
 }
 
@@ -177,6 +172,8 @@ class Container {
 
   renderPass = null
   composer = null
+
+  pixelRatio = 1
 
 
   // ***** 辉光Pass start*****
@@ -249,18 +246,23 @@ class Container {
   mouseEventTimer = null
 
   constructor(dom) {
-    this.checkDom(dom)
-    this.initScene()
-    this.initLight()
-    this.initDefaultSkyBox()
-    this.resize()
-    this.mouseEvent()
-    this.initPass()
-    // this.test()
-    this.animate()
+    async function init(this_) {
+      this_.checkDom(dom)
+      
+      this_.initScene()
+      
+      this_.initLight()
+      this_.initDefaultSkyBox()
+      this_.resize()
+      this_.mouseEvent()
+      this_.initPass()
+      // this.test()
+      this_.animate()
 
-    // 后续加载
-    this.initTransformControl()
+      // 后续加载
+      this_.initTransformControl()
+    }
+    init(this)
   }
 
   checkDom(dom) {
@@ -291,18 +293,35 @@ class Container {
     CACHE.container = this
   }
 
+  getPixelRatio() {
+    if (this.domElement.clientWidth < 4000) {
+      return window.devicePixelRatio
+    } else if (this.domElement.clientWidth < 8000) {
+      return window.devicePixelRatio / 2
+    } else if (this.domElement.clientWidth < 12000) {
+      return window.devicePixelRatio / 3
+    } else {
+      return window.devicePixelRatio / 3
+    }
+  }
+
   initScene() {
     const scene = new Ikun3D.Scene();
-    const camera = new Ikun3D.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100000);
+    const camera = new Ikun3D.PerspectiveCamera(45, this.domElement.clientWidth / this.domElement.clientHeight, 0.1, 100000);
     const renderer = new Ikun3D.WebGLRenderer({ logarithmicDepthBuffer: true });
+
+    renderer.setPixelRatio(this.getPixelRatio())
     const control = new Ikun3D.OrbitControls(camera, renderer.domElement);
+    control.panSpeed = this.domElement.clientWidth / window.innerWidth
+    control.rotateSpeed = this.domElement.clientWidth / window.innerWidth
     this.scene = scene
     this.camera = camera
     this.renderer = renderer
     this.control = control
 
-    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setSize(this.domElement.clientWidth, this.domElement.clientHeight);
     this.domElement.appendChild(renderer.domElement);
+    renderer.domElement.style.pointerEvents = 'all'
 
     control.update();
     renderer.shadowMap.enabled = true
@@ -405,10 +424,10 @@ class Container {
 
   resize() {
     addEventListener('resize', () => {
-      this.camera.aspect = window.innerWidth / window.innerHeight
+      this.camera.aspect = this.domElement.clientWidth / this.domElement.clientHeight
       this.camera.updateProjectionMatrix()
-      this.renderer.setSize(window.innerWidth, window.innerHeight);
-      this.renderer.setPixelRatio(window.devicePixelRatio)
+      this.renderer.setSize(this.domElement.clientWidth, this.domElement.clientHeight);
+      this.renderer.setPixelRatio(this.getPixelRatio())
     })
   }
 
@@ -493,7 +512,7 @@ class Container {
     url.forEach((u, index) => {
       const loader = new Ikun3D.GLTFLoader()
       const dracoLoader = new Ikun3D.DRACOLoader()
-      dracoLoader.setDecoderPath('/assets/draco/')
+      dracoLoader.setDecoderPath('/assets/threejs/draco/')
       dracoLoader.preload()
       loader.setDRACOLoader(dracoLoader)
       loader.load(u, (gltf) => {
@@ -548,11 +567,20 @@ class Container {
     const mouse = new Ikun3D.Vector2();
 
     function getObjects(event) {
-      mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-      mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+      // 获取容器的边界框和位置信息
+      const rect = this_.renderer.domElement.getBoundingClientRect();
+      
+      // 计算鼠标在容器内的相对位置
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+      
+      // 将鼠标位置归一化为 -1 到 1 的范围
+      mouse.x = (x / rect.width) * 2 - 1;
+      mouse.y = -(y / rect.height) * 2 + 1;
+      
       raycaster.setFromCamera(mouse, this_.camera);
       const intersects = raycaster.intersectObjects(this_.clickObjects, true);
-      return intersects
+      return intersects;
     }
 
     this.renderer.domElement.addEventListener("mousemove", (event) => {

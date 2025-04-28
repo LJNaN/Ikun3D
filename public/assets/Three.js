@@ -28578,10 +28578,10 @@ class PointsMaterial extends Material {
 
 }
 
-const _inverseMatrix = /*@__PURE__*/ new Matrix4();
-const _ray = /*@__PURE__*/ new Ray();
-const _sphere = /*@__PURE__*/ new Sphere();
-const _position$2 = /*@__PURE__*/ new Vector3();
+let _inverseMatrix = /*@__PURE__*/ new Matrix4();
+let _ray = /*@__PURE__*/ new Ray();
+let _sphere = /*@__PURE__*/ new Sphere();
+let _position$2 = /*@__PURE__*/ new Vector3();
 
 /**
  * A class for displaying points or point clouds.
@@ -56023,7 +56023,7 @@ function setPoint( point, pointMap, geometry, camera, x, y, z ) {
 
 }
 
-const _box = /*@__PURE__*/ new Box3();
+let _box = /*@__PURE__*/ new Box3();
 
 /**
  * Helper object to graphically show the world-axis-aligned bounding box
@@ -86727,6 +86727,218 @@ updateMatrixWorld( force ) {
 
 }
 
+
+
+
+let worldSpaceHalfWidth_start = new Vector3();
+let worldSpaceHalfWidth_end = new Vector3();
+
+let worldSpaceHalfWidth_start4 = new Vector4();
+let worldSpaceHalfWidth_end4 = new Vector4();
+
+let worldSpaceHalfWidth_ssOrigin = new Vector4();
+let worldSpaceHalfWidth_ssOrigin3 = new Vector3();
+let worldSpaceHalfWidth_mvMatrix = new Matrix4();
+let worldSpaceHalfWidth_line = new Line3();
+let worldSpaceHalfWidth_closestPoint = new Vector3();
+
+let worldSpaceHalfWidth_clipToWorldVector = new Vector4();
+
+let worldSpaceHalfWidth_ray, worldSpaceHalfWidth_lineWidth;
+
+// Returns the margin required to expand by in world space given the distance from the camera,
+// line width, resolution, and camera projection
+function getWorldSpaceHalfWidth( camera, distance, resolution ) {
+
+	// transform into clip space, adjust the x and y values by the pixel width offset, then
+	// transform back into world space to get world offset. Note clip space is [-1, 1] so full
+	// width does not need to be halved.
+	worldSpaceHalfWidth_clipToWorldVector.set( 0, 0, - distance, 1.0 ).applyMatrix4( camera.projectionMatrix );
+	worldSpaceHalfWidth_clipToWorldVector.multiplyScalar( 1.0 / worldSpaceHalfWidth_clipToWorldVector.w );
+	worldSpaceHalfWidth_clipToWorldVector.x = worldSpaceHalfWidth_lineWidth / resolution.width;
+	worldSpaceHalfWidth_clipToWorldVector.y = worldSpaceHalfWidth_lineWidth / resolution.height;
+	worldSpaceHalfWidth_clipToWorldVector.applyMatrix4( camera.projectionMatrixInverse );
+	worldSpaceHalfWidth_clipToWorldVector.multiplyScalar( 1.0 / worldSpaceHalfWidth_clipToWorldVector.w );
+
+	return Math.abs( Math.max( worldSpaceHalfWidth_clipToWorldVector.x, worldSpaceHalfWidth_clipToWorldVector.y ) );
+
+}
+
+function raycastWorldUnits( lineSegments, intersects ) {
+
+	const matrixWorld = lineSegments.matrixWorld;
+	const geometry = lineSegments.geometry;
+	const instanceStart = geometry.attributes.instanceStart;
+	const instanceEnd = geometry.attributes.instanceEnd;
+	const segmentCount = Math.min( geometry.instanceCount, instanceStart.count );
+
+	for ( let i = 0, l = segmentCount; i < l; i ++ ) {
+
+		worldSpaceHalfWidth_line.start.fromBufferAttribute( instanceStart, i );
+		worldSpaceHalfWidth_line.end.fromBufferAttribute( instanceEnd, i );
+
+		worldSpaceHalfWidth_line.applyMatrix4( matrixWorld );
+
+		const pointOnLine = new Vector3();
+		const point = new Vector3();
+
+		worldSpaceHalfWidth_ray.distanceSqToSegment( worldSpaceHalfWidth_line.start, worldSpaceHalfWidth_line.end, point, pointOnLine );
+		const isInside = point.distanceTo( pointOnLine ) < worldSpaceHalfWidth_lineWidth * 0.5;
+
+		if ( isInside ) {
+
+			intersects.push( {
+				point,
+				pointOnLine,
+				distance: worldSpaceHalfWidth_ray.origin.distanceTo( point ),
+				object: lineSegments,
+				face: null,
+				faceIndex: i,
+				uv: null,
+				uv1: null,
+			} );
+
+		}
+
+	}
+
+}
+
+function raycastScreenSpace( lineSegments, camera, intersects ) {
+
+	const projectionMatrix = camera.projectionMatrix;
+	const material = lineSegments.material;
+	const resolution = material.resolution;
+	const matrixWorld = lineSegments.matrixWorld;
+
+	const geometry = lineSegments.geometry;
+	const instanceStart = geometry.attributes.instanceStart;
+	const instanceEnd = geometry.attributes.instanceEnd;
+	const segmentCount = Math.min( geometry.instanceCount, instanceStart.count );
+
+	const near = - camera.near;
+
+	//
+
+	// pick a point 1 unit out along the ray to avoid the ray origin
+	// sitting at the camera origin which will cause "w" to be 0 when
+	// applying the projection matrix.
+	worldSpaceHalfWidth_ray.at( 1, worldSpaceHalfWidth_ssOrigin );
+
+	// ndc space [ - 1.0, 1.0 ]
+	worldSpaceHalfWidth_ssOrigin.w = 1;
+	worldSpaceHalfWidth_ssOrigin.applyMatrix4( camera.matrixWorldInverse );
+	worldSpaceHalfWidth_ssOrigin.applyMatrix4( projectionMatrix );
+	worldSpaceHalfWidth_ssOrigin.multiplyScalar( 1 / worldSpaceHalfWidth_ssOrigin.w );
+
+	// screen space
+	worldSpaceHalfWidth_ssOrigin.x *= resolution.x / 2;
+	worldSpaceHalfWidth_ssOrigin.y *= resolution.y / 2;
+	worldSpaceHalfWidth_ssOrigin.z = 0;
+
+	worldSpaceHalfWidth_ssOrigin3.copy( worldSpaceHalfWidth_ssOrigin );
+
+	worldSpaceHalfWidth_mvMatrix.multiplyMatrices( camera.matrixWorldInverse, matrixWorld );
+
+	for ( let i = 0, l = segmentCount; i < l; i ++ ) {
+
+		worldSpaceHalfWidth_start4.fromBufferAttribute( instanceStart, i );
+		worldSpaceHalfWidth_end4.fromBufferAttribute( instanceEnd, i );
+
+		worldSpaceHalfWidth_start4.w = 1;
+		worldSpaceHalfWidth_end4.w = 1;
+
+		// camera space
+		worldSpaceHalfWidth_start4.applyMatrix4( worldSpaceHalfWidth_mvMatrix );
+		worldSpaceHalfWidth_end4.applyMatrix4( worldSpaceHalfWidth_mvMatrix );
+
+		// skip the segment if it's entirely behind the camera
+		const isBehindCameraNear = worldSpaceHalfWidth_start4.z > near && worldSpaceHalfWidth_end4.z > near;
+		if ( isBehindCameraNear ) {
+
+			continue;
+
+		}
+
+		// trim the segment if it extends behind camera near
+		if ( worldSpaceHalfWidth_start4.z > near ) {
+
+			const deltaDist = worldSpaceHalfWidth_start4.z - worldSpaceHalfWidth_end4.z;
+			const t = ( worldSpaceHalfWidth_start4.z - near ) / deltaDist;
+			worldSpaceHalfWidth_start4.lerp( worldSpaceHalfWidth_end4, t );
+
+		} else if ( worldSpaceHalfWidth_end4.z > near ) {
+
+			const deltaDist = worldSpaceHalfWidth_end4.z - worldSpaceHalfWidth_start4.z;
+			const t = ( worldSpaceHalfWidth_end4.z - near ) / deltaDist;
+			worldSpaceHalfWidth_end4.lerp( worldSpaceHalfWidth_start4, t );
+
+		}
+
+		// clip space
+		worldSpaceHalfWidth_start4.applyMatrix4( projectionMatrix );
+		worldSpaceHalfWidth_end4.applyMatrix4( projectionMatrix );
+
+		// ndc space [ - 1.0, 1.0 ]
+		worldSpaceHalfWidth_start4.multiplyScalar( 1 / worldSpaceHalfWidth_start4.w );
+		worldSpaceHalfWidth_end4.multiplyScalar( 1 / worldSpaceHalfWidth_end4.w );
+
+		// screen space
+		worldSpaceHalfWidth_start4.x *= resolution.x / 2;
+		worldSpaceHalfWidth_start4.y *= resolution.y / 2;
+
+		worldSpaceHalfWidth_end4.x *= resolution.x / 2;
+		worldSpaceHalfWidth_end4.y *= resolution.y / 2;
+
+		// create 2d segment
+		worldSpaceHalfWidth_line.start.copy( worldSpaceHalfWidth_start4 );
+		worldSpaceHalfWidth_line.start.z = 0;
+
+		worldSpaceHalfWidth_line.end.copy( worldSpaceHalfWidth_end4 );
+		worldSpaceHalfWidth_line.end.z = 0;
+
+		// get closest point on ray to segment
+		const param = worldSpaceHalfWidth_line.closestPointToPointParameter( worldSpaceHalfWidth_ssOrigin3, true );
+		worldSpaceHalfWidth_line.at( param, worldSpaceHalfWidth_closestPoint );
+
+		// check if the intersection point is within clip space
+		const zPos = MathUtils.lerp( worldSpaceHalfWidth_start4.z, worldSpaceHalfWidth_end4.z, param );
+		const isInClipSpace = zPos >= - 1 && zPos <= 1;
+
+		const isInside = worldSpaceHalfWidth_ssOrigin3.distanceTo( worldSpaceHalfWidth_closestPoint ) < worldSpaceHalfWidth_lineWidth * 0.5;
+
+		if ( isInClipSpace && isInside ) {
+
+			worldSpaceHalfWidth_line.start.fromBufferAttribute( instanceStart, i );
+			worldSpaceHalfWidth_line.end.fromBufferAttribute( instanceEnd, i );
+
+			worldSpaceHalfWidth_line.start.applyMatrix4( matrixWorld );
+			worldSpaceHalfWidth_line.end.applyMatrix4( matrixWorld );
+
+			const pointOnLine = new Vector3();
+			const point = new Vector3();
+
+			worldSpaceHalfWidth_ray.distanceSqToSegment( worldSpaceHalfWidth_line.start, worldSpaceHalfWidth_line.end, point, pointOnLine );
+
+			intersects.push( {
+				point: point,
+				pointOnLine: pointOnLine,
+				distance: worldSpaceHalfWidth_ray.origin.distanceTo( point ),
+				object: lineSegments,
+				face: null,
+				faceIndex: i,
+				uv: null,
+				uv1: null,
+			} );
+
+		}
+
+	}
+
+}
+
+let _viewport = new Vector4();
+let _lineWidth = 1;
 
 class LineSegments2 extends Mesh {
 
